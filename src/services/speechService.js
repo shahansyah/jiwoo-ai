@@ -1,5 +1,13 @@
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
 
+// ====== PENGATURAN SUARA (ubah di sini) ======
+// Pilihan suara perempuan: "Aoede" (breezy), "Callirrhoe" (easy-going),
+// "Achernar" (soft), "Vindemiatrix" (gentle), "Sulafat" (warm), "Leda" (youthful)
+const VOICE_NAME = "Aoede";
+const VOICE_STYLE =
+  "Say this in Indonesian, softly and slowly, in a relaxed, laid-back, comforting tone, like a close friend talking to you late at night. Smile a little while speaking. Natural pauses, never in an announcer or navigation-voice style:";
+// ==============================================
+
 let currentAudio = null;
 let activeRecognition = null;
 let currentSessionId = 0; // Mengunci agar suara tidak pernah berulang / tumpang tindih
@@ -198,7 +206,7 @@ async function fetchGeminiLyraAudio(text, sessionId) {
           {
             parts: [
               {
-                text: `Say this in Indonesian, in a casual, warm, playful tone like a close friend chatting on the phone. Relaxed natural pace, small pauses, never like a news anchor or customer service:\n\n${text}`,
+                text: `${VOICE_STYLE}\n\n${text}`,
               },
             ],
           },
@@ -207,7 +215,7 @@ async function fetchGeminiLyraAudio(text, sessionId) {
           responseModalities: ["AUDIO"],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Leda" },
+              prebuiltVoiceConfig: { voiceName: VOICE_NAME },
             },
           },
         },
@@ -335,7 +343,10 @@ export async function speakText(text, onStart, onEnd) {
   stopSpeaking();
   const mySessionId = ++currentSessionId;
 
-  const wavUrl = await fetchGeminiLyraAudio(cleanText, mySessionId);
+  let wavUrl = await fetchGeminiLyraAudio(cleanText, mySessionId);
+  if (!wavUrl && mySessionId === currentSessionId) {
+    wavUrl = await fetchGeminiLyraAudio(cleanText, mySessionId); // coba sekali lagi
+  }
 
   if (mySessionId !== currentSessionId) {
     if (wavUrl) URL.revokeObjectURL(wavUrl);
