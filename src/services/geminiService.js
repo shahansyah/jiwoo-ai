@@ -1,6 +1,5 @@
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
-const BASE_V1BETA_URL =
-  "https://generativelanguage.googleapis.com/v1beta/";
+const BASE_V1BETA_URL = "https://generativelanguage.googleapis.com/v1beta/";
 
 let conversationHistory = [];
 let cachedValidModels = null;
@@ -67,11 +66,7 @@ async function fetchValidModelsFromGoogle() {
     // Abaikan jika gagal fetch list
   }
 
-  return [
-    "gemini-3-flash-preview",
-    "gemini-3-pro-preview",
-    "gemini-2.5-pro",
-  ];
+  return ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-pro"];
 }
 
 export async function getJiwooResponse(userMessage) {
