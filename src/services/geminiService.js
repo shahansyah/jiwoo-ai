@@ -3,9 +3,75 @@ const BASE_V1BETA_URL =
   "https://generativelanguage.googleapis.com/v1beta/";
 
 let conversationHistory = [];
+let cachedValidModels = null;
 
 export function resetJiwooMemory() {
   conversationHistory = [];
+}
+
+// Mengambil daftar nama model yang benar-benar ada di server Google untuk API Key ini
+async function fetchValidModelsFromGoogle() {
+  if (cachedValidModels && cachedValidModels.length > 0) {
+    return cachedValidModels;
+  }
+
+  try {
+    const res = await fetch(
+      `${BASE_V1BETA_URL}models?key=${encodeURIComponent(GEMINI_API_KEY)}`,
+      {
+        headers: { "x-goog-api-key": GEMINI_API_KEY },
+      },
+    );
+    const data = await res.json();
+
+    if (data?.models && Array.isArray(data.models)) {
+      // Ambil semua model teks yang mendukung generateContent
+      const allSupported = data.models
+        .filter(
+          (m) =>
+            m.supportedGenerationMethods?.includes("generateContent") &&
+            m.name.includes("gemini") &&
+            !m.name.includes("tts") &&
+            !m.name.includes("image") &&
+            !m.name.includes("embedding") &&
+            !m.name.includes("vision"),
+        )
+        .map((m) => m.name.replace("models/", ""));
+
+      // Urutkan agar model generasi 3 (gemini-3...) berada paling atas,
+      // dan singkirkan model yang sudah diblokir untuk user baru (1.5, 2.0, 2.5-flash biasa)
+      const gen3Models = allSupported.filter((name) =>
+        name.startsWith("gemini-3"),
+      );
+      const otherModels = allSupported.filter(
+        (name) =>
+          !name.startsWith("gemini-3") &&
+          !name.startsWith("gemini-1.5") &&
+          !name.startsWith("gemini-2.0") &&
+          name !== "gemini-2.5-flash",
+      );
+
+      const finalQueue = [...gen3Models, ...otherModels];
+
+      if (finalQueue.length > 0) {
+        cachedValidModels = finalQueue;
+        return finalQueue;
+      }
+
+      if (allSupported.length > 0) {
+        cachedValidModels = allSupported;
+        return allSupported;
+      }
+    }
+  } catch {
+    // Abaikan jika gagal fetch list
+  }
+
+  return [
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
+    "gemini-2.5-pro",
+  ];
 }
 
 export async function getJiwooResponse(userMessage) {
@@ -36,7 +102,6 @@ Jika sapaan atau obrolan biasa, jangan tulis tag [CBT: ...] sama sekali.`;
 
   const recentHistory = conversationHistory.slice(-8);
 
-  // Gabungkan instruksi langsung di contents agar 100% kompatibel dengan semua versi endpoint v1beta
   const payloadContents = [
     {
       role: "user",
@@ -53,13 +118,12 @@ Jika sapaan atau obrolan biasa, jangan tulis tag [CBT: ...] sama sekali.`;
     ...recentHistory,
   ];
 
-  // Hanya gunakan model Gemini 3.0 terbaru yang diminta oleh Google AI Studio
-  const modelsToTry = ["gemini-3.0-flash", "gemini-3-flash-preview"];
+  // Ambil daftar model asli dari akun Google AI Studio kamu
+  const modelsToTry = await fetchValidModelsFromGoogle();
   const errorLogs = [];
 
   for (const modelName of modelsToTry) {
     try {
-      // Gunakan header x-goog-api-key dan query key sekaligus
       const endpoint = `${BASE_V1BETA_URL}models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
 
       const response = await fetch(endpoint, {
@@ -80,15 +144,18 @@ Jika sapaan atau obrolan biasa, jangan tulis tag [CBT: ...] sama sekali.`;
 
       if (!response.ok) {
         const msg = data?.error?.message || `HTTP ${response.status}`;
-        errorLogs.push(`${modelName}: ${msg}`);
+        errorLogs.push(`${modelName} -> ${msg}`);
         continue;
       }
 
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      if (!rawText) {
-        errorLogs.push(`${modelName}: Respons kosong`);
-        continue;
-      }
+      if (!rawText) continue;
+
+      // Kunci model yang berhasil ini di urutan pertama untuk chat berikutnya agar instan
+      cachedValidModels = [
+        modelName,
+        ...modelsToTry.filter((m) => m !== modelName),
+      ];
 
       let cleanReply = rawText.replace(/[*#`]/g, "").trim();
       let distortion = null;
@@ -113,58 +180,14 @@ Jika sapaan atau obrolan biasa, jangan tulis tag [CBT: ...] sama sekali.`;
         mood: "friendly",
       };
     } catch (err) {
-      errorLogs.push(`${modelName}: ${err?.message || "Network error"}`);
+      errorLogs.push(`${modelName} -> ${err?.message || "Network error"}`);
     }
-  }
-
-  // Coba fallback ke endpoint Interactions API baru jika key berawalan AQ. mewajibkannya
-  try {
-    const interactionsRes = await fetch(
-      `${BASE_V1BETA_URL}interactions?key=${encodeURIComponent(GEMINI_API_KEY)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          model: "models/gemini-3.0-flash",
-          input: `${systemPrompt}\n\nPengguna berkata: "${userMessage}"\nBalasan Jiwoo:`,
-        }),
-      },
-    );
-
-    if (interactionsRes.ok) {
-      const intData = await interactionsRes.json();
-      const intText =
-        intData?.output?.text ||
-        intData?.outputs?.[0]?.text ||
-        intData?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "";
-
-      if (intText) {
-        const cleanReply = intText.replace(/[*#`]/g, "").trim();
-        conversationHistory.push({
-          role: "model",
-          parts: [{ text: cleanReply }],
-        });
-        return {
-          reply: cleanReply,
-          distortion: null,
-          reframing: null,
-          mood: "friendly",
-        };
-      }
-    }
-  } catch {
-    // Abaikan jika endpoint interactions belum perlu
   }
 
   conversationHistory.pop();
 
-  // Tampilkan error PERTAMA (dari gemini-3.0-flash) agar tidak tertimpa model lain
   return {
-    reply: `Waduh, koneksiku ke server Gemini agak terhambat nih (${errorLogs[0] || "Key tidak valid"}). Coba kirim ulang pesanmu sebentar lagi ya!`,
+    reply: `Daftar model yang dicoba: [${modelsToTry.slice(0, 4).join(", ")}]. Detail kendala: ${errorLogs[0] || "Tidak diketahui"}`,
     distortion: null,
     reframing: null,
     mood: "friendly",
