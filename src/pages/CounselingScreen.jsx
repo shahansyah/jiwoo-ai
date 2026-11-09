@@ -3,7 +3,7 @@ import { Send, Sparkles, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import JiwooInteractiveMascot from "../components/JiwooInteractiveMascot";
 import BottomNavbar from "../components/BottomNavbar";
 import { getJiwooResponse, resetJiwooMemory } from "../services/geminiService";
-import { speakText } from "../services/speechService";
+import { speakText, stopSpeaking } from "../services/speechService";
 import { getCurrentUser } from "../services/authService";
 
 export default function CounselingScreen({ setScreen }) {
@@ -30,7 +30,6 @@ export default function CounselingScreen({ setScreen }) {
   const fallbackTimerRef = useRef(null);
   const chatContainerRef = useRef(null);
 
-  // Scroll otomatis di dalam area pesan setiap ada balasan baru
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
@@ -48,10 +47,8 @@ export default function CounselingScreen({ setScreen }) {
       return;
     }
 
-    setIsSpeaking(true);
-
     const words = (text || "").trim().split(/\s+/).length;
-    const estimatedMs = Math.min(Math.max(words * 380, 3200), 18000);
+    const estimatedMs = Math.min(Math.max(words * 400, 3500), 22000);
     fallbackTimerRef.current = setTimeout(() => {
       setIsSpeaking(false);
     }, estimatedMs);
@@ -69,9 +66,7 @@ export default function CounselingScreen({ setScreen }) {
   useEffect(() => {
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopSpeaking();
     };
   }, []);
 
@@ -128,9 +123,7 @@ export default function CounselingScreen({ setScreen }) {
     const trimmed = inputText.trim();
     if (!trimmed || isLoading) return;
 
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopSpeaking();
     setIsSpeaking(false);
 
     const userMsg = {
@@ -174,9 +167,7 @@ export default function CounselingScreen({ setScreen }) {
 
   const handleResetSession = () => {
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopSpeaking();
     resetJiwooMemory();
     setIsSpeaking(false);
     setMessages([
@@ -192,8 +183,8 @@ export default function CounselingScreen({ setScreen }) {
   };
 
   const toggleMute = () => {
-    if (!isMuted && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+    if (!isMuted) {
+      stopSpeaking();
       setIsSpeaking(false);
     }
     setIsMuted(!isMuted);
@@ -207,21 +198,20 @@ export default function CounselingScreen({ setScreen }) {
   };
 
   return (
-    <div className="relative z-10 flex flex-col w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-21.5 landscape:pb-18.5 md:py-6 px-3 sm:px-5 md:px-8 text-center">
-      {/* Kontainer Adaptif:
-          - Portrait HP: Flex Kolom (Maskot di atas, Chat fleksibel di bawah)
-          - Landscape HP & Layar Laptop (md): 2 Kolom Berdampingan (Kiri Maskot, Kanan Chat) */}
-      <div className="flex-1 min-h-0 w-full flex flex-col landscape:flex-row md:grid md:grid-cols-12 gap-1.5 landscape:gap-4 md:gap-7 items-stretch overflow-hidden">
-        {/* PANEL KIRI / ATAS: Panggung Maskot Interaktif Jiwoo */}
-        <div className="shrink-0 landscape:w-[38%] md:w-auto md:col-span-5 flex flex-col items-center justify-center bg-transparent md:bg-[#F6E4CE]/80 md:border-2 md:border-[#4A3525]/25 md:rounded-3xl p-0.5 md:p-7 text-center md:h-full">
-          {/* Status Badge */}
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full bg-[#FDF3E7] border border-[#4A3525]/30 text-[9.5px] sm:text-[11px] font-bold mb-1 shadow-2xs max-w-full">
-            <Sparkles className="text-[#F4A950] shrink-0" size={11} />
+    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-21.5 max-md:landscape:pb-18.5 md:py-7 px-3 sm:px-5 md:px-8 text-center">
+      {/* Kontainer Utama:
+          - HP Portrait: Flex Kolom
+          - HP Landscape (max-md:landscape): Flex Baris 2 Kolom
+          - Desktop / Laptop (md): Grid 12 Kolom Lebar Penuh (5 Kiri + 7 Kanan) */}
+      <div className="flex-1 min-h-0 w-full flex flex-col max-md:landscape:flex-row md:grid md:grid-cols-12 gap-1.5 max-md:landscape:gap-4 md:gap-7 items-stretch overflow-hidden">
+        {/* PANEL KIRI: Panggung Maskot Interaktif Jiwoo */}
+        <div className="shrink-0 max-md:landscape:w-[38%] md:col-span-5 flex flex-col items-center justify-center bg-transparent md:bg-[#F6E4CE]/80 md:border-2 md:border-[#4A3525]/25 md:rounded-3xl p-0.5 md:p-7 text-center md:h-full overflow-hidden">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FDF3E7] border border-[#4A3525]/30 text-[9.5px] sm:text-[11px] font-bold mb-1.5 shadow-2xs max-w-full">
+            <Sparkles className="text-[#F4A950] shrink-0" size={12} />
             <span className="truncate">Status Jiwoo: {uiState.statusText}</span>
           </span>
 
-          {/* Area Maskot (Ukuran otomatis mengecil di HP pendek & mode landscape agar tidak memakan ruang chat) */}
-          <div className="relative flex flex-col items-center justify-center">
+          <div className="relative flex flex-col items-center justify-center my-1">
             {(uiState.mode === "listening" ||
               uiState.mode === "explaining") && (
               <div
@@ -230,7 +220,7 @@ export default function CounselingScreen({ setScreen }) {
             )}
 
             <div
-              className={`mb-0.5 z-20 px-2.5 py-0.5 rounded-full border-2 border-[#4A3525] text-[9.5px] sm:text-[10px] font-bold shadow-2xs flex items-center gap-1 ${uiState.badgeColor}`}
+              className={`mb-1 z-20 px-3 py-0.5 rounded-full border-2 border-[#4A3525] text-[9.5px] sm:text-[10px] font-bold shadow-2xs flex items-center gap-1 ${uiState.badgeColor}`}
             >
               {uiState.mode === "explaining" && (
                 <Volume2 className="animate-bounce" size={11} />
@@ -241,16 +231,16 @@ export default function CounselingScreen({ setScreen }) {
             <JiwooInteractiveMascot
               mode={uiState.mode}
               onClick={handleReplayLastMessage}
-              className="relative z-10 w-32 h-28 sm:w-40 sm:h-36 landscape:w-28 landscape:h-24 md:landscape:w-60 md:landscape:h-56 md:w-60 md:h-56"
+              className="relative z-10 w-32 h-28 sm:w-40 sm:h-36 max-md:landscape:w-28 max-md:landscape:h-24 md:w-56 md:h-52"
             />
 
             {uiState.mode === "explaining" && (
-              <div className="mt-0.5 flex items-end gap-1 h-3">
+              <div className="mt-1 flex items-end gap-1 h-3.5">
+                <span className="w-1.5 h-2.5 bg-[#F4A950] border border-[#4A3525] rounded-full animate-bounce" />
+                <span className="w-1.5 h-3.5 bg-[#4A3525] rounded-full animate-pulse" />
                 <span className="w-1.5 h-2 bg-[#F4A950] border border-[#4A3525] rounded-full animate-bounce" />
-                <span className="w-1.5 h-3 bg-[#4A3525] rounded-full animate-pulse" />
-                <span className="w-1.5 h-1.5 bg-[#F4A950] border border-[#4A3525] rounded-full animate-bounce" />
-                <span className="w-1.5 h-3 bg-[#4A3525] rounded-full animate-pulse" />
-                <span className="w-1.5 h-2 bg-[#F4A950] border border-[#4A3525] rounded-full animate-bounce" />
+                <span className="w-1.5 h-3.5 bg-[#4A3525] rounded-full animate-pulse" />
+                <span className="w-1.5 h-2.5 bg-[#F4A950] border border-[#4A3525] rounded-full animate-bounce" />
               </div>
             )}
           </div>
@@ -260,11 +250,11 @@ export default function CounselingScreen({ setScreen }) {
             Jiwoo akan membalas dengan tulisan sekaligus berbicara langsung.
           </p>
 
-          <div className="hidden md:flex items-center gap-2.5 mt-5">
+          <div className="hidden md:flex flex-wrap items-center justify-center gap-2.5 mt-4">
             <button
               type="button"
               onClick={handleResetSession}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/40 text-[11px] font-bold text-[#4A3525] cursor-pointer transition-all shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/40 text-[11px] font-bold text-[#4A3525] cursor-pointer transition-all shadow-2xs"
             >
               <RotateCcw size={12} /> Bersihkan Obrolan
             </button>
@@ -272,7 +262,7 @@ export default function CounselingScreen({ setScreen }) {
             <button
               type="button"
               onClick={toggleMute}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/40 text-[11px] font-bold text-[#4A3525] cursor-pointer transition-all shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/40 text-[11px] font-bold text-[#4A3525] cursor-pointer transition-all shadow-2xs"
             >
               {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
               {isMuted ? "Suara Mati" : "Suara Aktif"}
@@ -280,9 +270,8 @@ export default function CounselingScreen({ setScreen }) {
           </div>
         </div>
 
-        {/* PANEL KANAN / BAWAH: Ruang Chat Fleksibel (flex-1 min-h-0 menjamin input bar tidak pernah terdorong keluar layar) */}
-        <div className="flex-1 min-h-0 landscape:w-[62%] md:w-auto md:col-span-7 flex flex-col justify-between w-full max-w-lg md:max-w-none mx-auto bg-transparent md:bg-[#FDF3E7]/85 md:border-2 md:border-[#4A3525] md:rounded-3xl p-0 md:p-6 md:shadow-xl md:h-full overflow-hidden">
-          {/* Daftar Riwayat Obrolan yang Bisa Di-scroll Penuh */}
+        {/* PANEL KANAN: Ruang Chat Fleksibel */}
+        <div className="flex-1 min-h-0 max-md:landscape:w-[62%] md:col-span-7 flex flex-col justify-between w-full max-w-lg md:max-w-none mx-auto bg-transparent md:bg-[#FDF3E7]/85 md:border-2 md:border-[#4A3525] md:rounded-3xl p-0 md:p-6 md:shadow-xl md:h-full overflow-hidden">
           <div
             ref={chatContainerRef}
             className="flex-1 min-h-0 overflow-y-auto px-1 sm:px-2 pt-2 pb-4 space-y-5"
@@ -290,7 +279,6 @@ export default function CounselingScreen({ setScreen }) {
             {messages.map((msg) =>
               msg.sender === "jiwoo" ? (
                 <div key={msg.id} className="w-full space-y-3 animate-pop-1">
-                  {/* BALON BICARA VEKTOR KOMIK */}
                   <div className="relative w-[96%] mb-5">
                     <div
                       className="absolute inset-0 translate-x-1.5 translate-y-1.5 bg-[#1E1B18]"
@@ -387,10 +375,10 @@ export default function CounselingScreen({ setScreen }) {
             )}
           </div>
 
-          {/* Form Input Chat: Terkunci Aman di Atas BottomNavbar pada Semua Ukuran Layar */}
+          {/* Form Input Chat */}
           <form
             onSubmit={handleTextSubmit}
-            className="w-full pt-2 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-2 shrink-0 bg-[#FDF3E7]/90 md:bg-transparent backdrop-blur-xs"
+            className="w-full pt-2.5 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-2 shrink-0 bg-[#FDF3E7]/90 md:bg-transparent backdrop-blur-xs"
           >
             <button
               type="button"
