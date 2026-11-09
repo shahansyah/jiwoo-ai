@@ -16,14 +16,14 @@ import {
   stopListening,
   speakText,
   stopSpeaking,
+  unlockSpeechAudio,
 } from "../services/speechService";
 import { getCurrentUser } from "../services/authService";
 
 export default function CounselingScreen({ setScreen }) {
   const currentUser = getCurrentUser();
   const firstName = (currentUser.name || "Teman").split(" ")[0].toUpperCase();
-
-  const initialGreeting = `Hai ${firstName}, selamat datang di Jiwoo! Aplikasi konseling yang dirancang untuk siap mendengarkan semua curahan isi hatimu. Ceritakan apa yang sedang membebani pikiranmu, aku siap memberikan saran dan nasihat terbaik untukmu.`;
+  const initialGreeting = `Hai ${firstName}! Aku Jiwoo, teman curhatmu. Lagi ada cerita seru atau lagi ada yang bikin kepikiran hari ini? Ceritain aja yuk!`;
 
   const [messages, setMessages] = useState([
     {
@@ -34,7 +34,6 @@ export default function CounselingScreen({ setScreen }) {
       reframing: null,
     },
   ]);
-
   const [inputText, setInputText] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,7 +62,6 @@ export default function CounselingScreen({ setScreen }) {
 
     setIsSpeaking(true);
     const startTime = Date.now();
-
     const words = (text || "").trim().split(/\s+/).length;
     const minDurationMs = Math.min(Math.max(words * 380, 3500), 18000);
 
@@ -76,11 +74,11 @@ export default function CounselingScreen({ setScreen }) {
       () => setIsSpeaking(true),
       () => {
         const elapsed = Date.now() - startTime;
-        if (elapsed > 2000) {
+        if (elapsed > 1800) {
           if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
           setIsSpeaking(false);
         }
-      },
+      }
     );
   };
 
@@ -99,11 +97,11 @@ export default function CounselingScreen({ setScreen }) {
       return {
         mode: "listening",
         statusText: isListening
-          ? "Mendengarkan Suaramu... 🎙️"
-          : "Menyimak Curhatanmu... 👂",
+          ? "Mendengarkan Suaramu..."
+          : "Menyimak Curhatanmu...",
         badgeText: isListening
-          ? "Aku sedang menyimak suaramu... 👂"
-          : "Aku menyimak tulisanmu... 🐾",
+          ? "Aku sedang menyimak suaramu..."
+          : "Aku menyimak tulisanmu...",
         badgeColor: isListening
           ? "bg-red-500 text-white"
           : "bg-[#F4A950] text-[#4A3525]",
@@ -112,35 +110,32 @@ export default function CounselingScreen({ setScreen }) {
           : "border-[#F4A950] bg-[#F4A950]/20",
       };
     }
-
     if (isLoading) {
       return {
         mode: "thinking",
-        statusText: "Merangkai Nasihat & Saran Terbaik... 💭",
-        badgeText: "Hmm, merangkai saran... 💭",
+        statusText: "Merangkai Nasihat & Saran Terbaik...",
+        badgeText: "Hmm, merangkai saran...",
         badgeColor: "bg-white text-[#4A3525]",
         ringColor: "border-[#4A3525]/40 bg-[#F6E4CE]/40",
       };
     }
-
     if (isSpeaking) {
       return {
         mode: "explaining",
-        statusText: "Jiwoo Sedang Menjelaskan Nasihat 💬",
-        badgeText: "Sedang berbicara & menasihati... 💬",
+        statusText: "Jiwoo Sedang Menjelaskan Nasihat",
+        badgeText: "Sedang berbicara & menasihati...",
         badgeColor: "bg-green-600 text-white",
         ringColor: "border-green-500 bg-green-300/25",
       };
     }
-
     return {
       mode: "greeting",
       statusText:
         messages.length > 1
           ? "Siap Mendengarkan Cerita Lanjutan"
-          : "Menyapa & Siap Mendengarkan 👋",
+          : "Menyapa & Siap Mendengarkan",
       badgeText:
-        messages.length > 1 ? "Ceritakan lagi yuk! 🐾" : `Hai ${firstName}! 👋`,
+        messages.length > 1 ? "Ceritakan lagi yuk!" : `Hai ${firstName}!`,
       badgeColor: "bg-[#FDF3E7] text-[#4A3525]",
       ringColor: "",
     };
@@ -152,6 +147,8 @@ export default function CounselingScreen({ setScreen }) {
     const trimmed = (rawText || "").trim();
     if (!trimmed || isLoading) return;
 
+    // Buka kunci autoplay audio browser tepat saat aksi pengguna terjadi
+    unlockSpeechAudio();
     stopSpeaking();
     setIsSpeaking(false);
 
@@ -160,6 +157,7 @@ export default function CounselingScreen({ setScreen }) {
       sender: "user",
       text: trimmed,
     };
+
     setMessages((prev) => [...prev, userMsg]);
     setInputText("");
     setIsLoading(true);
@@ -178,7 +176,7 @@ export default function CounselingScreen({ setScreen }) {
       triggerJiwooSpeech(response.reply);
     } catch {
       const fallbackReply =
-        "Maaf ya, koneksi sedang kurang stabil. Tarik napas pelan-pelan, dan coba kirimkan lagi ceritamu ya!";
+        "Maaf ya, koneksi lagi agak kurang stabil nih. Tarik napas pelan-pelan, terus coba kirim lagi ceritamu ya!";
       setMessages((prev) => [
         ...prev,
         {
@@ -201,6 +199,7 @@ export default function CounselingScreen({ setScreen }) {
 
   const handleMicClick = () => {
     if (isLoading) return;
+    unlockSpeechAudio();
 
     if (isListening) {
       stopListening();
@@ -234,11 +233,12 @@ export default function CounselingScreen({ setScreen }) {
             },
           ]);
         }
-      },
+      }
     );
   };
 
   const handleResetSession = () => {
+    unlockSpeechAudio();
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     stopSpeaking();
     stopListening();
@@ -258,6 +258,7 @@ export default function CounselingScreen({ setScreen }) {
   };
 
   const toggleMute = () => {
+    unlockSpeechAudio();
     if (!isMuted) {
       stopSpeaking();
       setIsSpeaking(false);
@@ -269,15 +270,16 @@ export default function CounselingScreen({ setScreen }) {
     [...messages].reverse().find((m) => m.sender === "jiwoo") || messages[0];
 
   const handleReplayLastMessage = () => {
+    unlockSpeechAudio();
     triggerJiwooSpeech(lastJiwooMessage.text);
   };
 
   return (
-    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-[86px] max-md:landscape:pb-[74px] md:py-7 px-3 sm:px-5 md:px-8 text-center">
-      <div className="flex-1 min-h-0 w-full flex flex-col max-md:landscape:flex-row md:grid md:grid-cols-12 gap-1.5 max-md:landscape:gap-4 md:gap-7 items-stretch overflow-hidden">
+    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden px-3 sm:px-6 pt-1 pb-18.5 max-md:landscape:pb-17 md:py-5">
+      <div className="flex-1 min-h-0 w-full flex flex-col max-md:landscape:flex-row md:grid md:grid-cols-12 gap-1.5 max-md:landscape:gap-3 md:gap-6 items-center md:items-stretch">
         {/* PANEL KIRI: Panggung Maskot Interaktif Jiwoo */}
-        <div className="shrink-0 max-md:landscape:w-[38%] md:col-span-5 flex flex-col items-center justify-center bg-transparent md:bg-[#F6E4CE]/80 md:border-2 md:border-[#4A3525]/25 md:rounded-3xl p-0.5 md:p-7 text-center md:h-full overflow-hidden">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FDF3E7] border border-[#4A3525]/30 text-[9.5px] sm:text-[11px] font-bold mb-1.5 shadow-2xs max-w-full">
+        <div className="shrink-0 max-md:landscape:w-[38%] md:col-span-5 flex flex-col items-center justify-center bg-transparent md:bg-[#F6E4CE]/85 md:border-2 md:border-[#4A3525] md:rounded-3xl py-0.5 md:p-5 text-center md:shadow-md">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FDF3E7] border border-[#4A3525]/25 text-[10px] font-bold text-[#4A3525] mb-1 shadow-2xs">
             <Sparkles className="text-[#F4A950] shrink-0" size={12} />
             <span className="truncate">Status Jiwoo: {uiState.statusText}</span>
           </span>
@@ -291,7 +293,7 @@ export default function CounselingScreen({ setScreen }) {
             )}
 
             <div
-              className={`mb-1 z-20 px-3 py-0.5 rounded-full border-2 border-[#4A3525] text-[9.5px] sm:text-[10px] font-bold shadow-2xs flex items-center gap-1 ${uiState.badgeColor}`}
+              className={`mb-1 z-20 px-3 py-0.5 rounded-full border-2 border-[#4A3525] text-[9.5px] sm:text-[10px] font-bold shadow-2xs transition-all duration-300 flex items-center gap-1.5 ${uiState.badgeColor}`}
             >
               {uiState.mode === "explaining" && (
                 <Volume2 className="animate-bounce" size={11} />
@@ -325,15 +327,14 @@ export default function CounselingScreen({ setScreen }) {
             <button
               type="button"
               onClick={handleResetSession}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/40 text-[11px] font-bold text-[#4A3525] cursor-pointer transition-all shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/35 text-xs font-bold text-[#4A3525] transition-all cursor-pointer shadow-2xs"
             >
               <RotateCcw size={12} /> Bersihkan Obrolan
             </button>
-
             <button
               type="button"
               onClick={toggleMute}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/40 text-[11px] font-bold text-[#4A3525] cursor-pointer transition-all shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white hover:bg-[#FDF3E7] border border-[#4A3525]/35 text-xs font-bold text-[#4A3525] transition-all cursor-pointer shadow-2xs"
             >
               {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
               {isMuted ? "Suara Mati" : "Suara Aktif"}
@@ -342,7 +343,7 @@ export default function CounselingScreen({ setScreen }) {
         </div>
 
         {/* PANEL KANAN: Ruang Chat Fleksibel */}
-        <div className="flex-1 min-h-0 max-md:landscape:w-[62%] md:col-span-7 flex flex-col justify-between w-full max-w-lg md:max-w-none mx-auto bg-transparent md:bg-[#FDF3E7]/85 md:border-2 md:border-[#4A3525] md:rounded-3xl p-0 md:p-6 md:shadow-xl md:h-full overflow-hidden">
+        <div className="flex-1 min-h-0 max-md:landscape:w-[62%] md:col-span-7 flex flex-col justify-between w-full max-w-md md:max-w-none mx-auto bg-transparent md:bg-[#FDF3E7]/90 md:border-2 md:border-[#4A3525] md:rounded-3xl md:p-5 md:shadow-md overflow-hidden">
           <div
             ref={chatContainerRef}
             className="flex-1 min-h-0 overflow-y-auto px-1 sm:px-2 pt-2 pb-4 space-y-5"
@@ -355,7 +356,6 @@ export default function CounselingScreen({ setScreen }) {
                       className="absolute inset-0 translate-x-1.5 translate-y-1.5 bg-[#1E1B18]"
                       style={{ borderRadius: "28px" }}
                     />
-
                     <div
                       className="relative bg-white border-[3px] border-[#1E1B18] px-4 py-3 sm:px-6 sm:py-4 text-left"
                       style={{ borderRadius: "28px" }}
@@ -377,11 +377,13 @@ export default function CounselingScreen({ setScreen }) {
                         <span className="text-[9.5px] sm:text-[10px] font-extrabold uppercase tracking-wider text-[#F4A950]">
                           Nasihat & Konseling Jiwoo
                         </span>
-
                         <button
                           type="button"
-                          onClick={() => triggerJiwooSpeech(msg.text)}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold text-[#4A3525]/80 hover:text-[#1E1B18] cursor-pointer"
+                          onClick={() => {
+                            unlockSpeechAudio();
+                            triggerJiwooSpeech(msg.text);
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-[#4A3525]/80 hover:text-[#4A3525] cursor-pointer"
                         >
                           <Volume2 size={12} /> Putar Suara
                         </button>
@@ -424,24 +426,23 @@ export default function CounselingScreen({ setScreen }) {
                           Pola Pikir Terdeteksi: {msg.distortion}
                         </div>
                         <p className="text-[11px] sm:text-xs text-[#4A3525] leading-relaxed">
-                          <strong>💡 Saran & Nasihat CBT:</strong>{" "}
-                          {msg.reframing}
+                          <strong>Saran & Nasihat CBT:</strong> {msg.reframing}
                         </p>
                       </div>
                     )}
                 </div>
               ) : (
                 <div key={msg.id} className="flex justify-end w-full pr-1">
-                  <div className="bg-[#4A3525] text-[#FDF3E7] border-2 border-[#1E1B18] rounded-3xl rounded-tr-xs px-4 py-2 text-xs sm:text-sm max-w-[85%] text-left shadow-[2px_2px_0px_#1E1B18] leading-relaxed">
+                  <div className="bg-[#4A3525] text-[#FDF3E7] border-2 border-[#1E1B18] rounded-3xl rounded-tr-xs px-4 py-2.5 max-w-[85%] text-xs sm:text-sm font-medium text-left shadow-xs">
                     {msg.text}
                   </div>
                 </div>
-              ),
+              )
             )}
 
             {isLoading && (
-              <div className="w-fit bg-white border-2 border-[#1E1B18] rounded-full px-4 py-2 text-xs font-bold text-[#4A3525] shadow-[2px_2px_0px_#1E1B18] animate-pulse">
-                Jiwoo sedang merangkai saran & nasihat untukmu... 🐾
+              <div className="w-fit bg-white border-2 border-[#1E1B18] rounded-full px-4 py-2 text-xs font-bold text-[#4A3525] animate-pulse">
+                Jiwoo sedang merangkai saran & nasihat untukmu...
               </div>
             )}
           </div>
@@ -449,13 +450,13 @@ export default function CounselingScreen({ setScreen }) {
           {/* Form Input Suara (Mic) & Ketikan Chat */}
           <form
             onSubmit={handleTextSubmit}
-            className="w-full pt-2.5 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-1.5 sm:gap-2 shrink-0 bg-[#FDF3E7]/90 md:bg-transparent backdrop-blur-xs"
+            className="w-full pt-2.5 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-1.5 sm:gap-2 shrink-0 bg-transparent"
           >
             <button
               type="button"
               onClick={toggleMute}
               title={isMuted ? "Aktifkan Suara Jiwoo" : "Matikan Suara Jiwoo"}
-              className="md:hidden p-2.5 rounded-full bg-white border-2 border-[#1E1B18] text-[#1E1B18] shrink-0 shadow-[2px_2px_0px_#1E1B18]"
+              className="md:hidden p-2.5 rounded-full bg-white border-2 border-[#1E1B18] text-[#1E1B18] shrink-0 shadow-2xs"
             >
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
@@ -470,7 +471,7 @@ export default function CounselingScreen({ setScreen }) {
                   : "Klik untuk bicara langsung ke Jiwoo"
               }
               aria-label="Bicara menggunakan mikrofon"
-              className={`p-2.5 sm:px-3.5 sm:py-2.5 rounded-full border-2 border-[#1E1B18] font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-[2px_2px_0px_#1E1B18] ${
+              className={`p-2.5 sm:px-3.5 sm:py-2.5 rounded-full border-2 border-[#1E1B18] font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-2xs ${
                 isListening
                   ? "bg-red-500 text-white animate-pulse"
                   : "bg-white hover:bg-[#F6E4CE] text-[#1E1B18] active:scale-95"
@@ -491,14 +492,14 @@ export default function CounselingScreen({ setScreen }) {
                   ? "Silakan bicara, Jiwoo sedang mendengarkan..."
                   : "Bicara lewat mic atau ketik di sini..."
               }
-              className="flex-1 min-w-0 bg-white border-2 border-[#1E1B18] rounded-full px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-[#1E1B18] placeholder-[#4A3525]/55 focus:outline-none shadow-[2px_2px_0px_#1E1B18]"
+              className="flex-1 min-w-0 bg-white border-2 border-[#1E1B18] rounded-full px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-[#1E1B18] placeholder:text-[#4A3525]/50 focus:outline-none focus:ring-2 focus:ring-[#F4A950]"
             />
 
             <button
               type="submit"
               disabled={isLoading || !inputText.trim()}
               aria-label="Kirim Pesan"
-              className="bg-[#F4A950] hover:bg-[#e5983e] disabled:opacity-50 border-2 border-[#1E1B18] text-[#1E1B18] p-2.5 sm:px-5 sm:py-2.5 rounded-full flex items-center justify-center active:scale-95 transition-all cursor-pointer shrink-0 shadow-[2px_2px_0px_#1E1B18]"
+              className="bg-[#F4A950] hover:bg-[#e5983e] disabled:opacity-50 border-2 border-[#1E1B18] text-[#1E1B18] p-2.5 sm:p-3 rounded-full transition-all cursor-pointer shrink-0 shadow-2xs"
             >
               <Send size={15} />
             </button>
