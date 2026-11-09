@@ -65,7 +65,7 @@ export default function CounselingScreen({ setScreen }) {
     const startTime = Date.now();
 
     const words = (text || "").trim().split(/\s+/).length;
-    const minDurationMs = Math.min(Math.max(words * 360, 4000), 18000);
+    const minDurationMs = Math.min(Math.max(words * 380, 3500), 18000);
 
     fallbackTimerRef.current = setTimeout(() => {
       setIsSpeaking(false);
@@ -76,7 +76,7 @@ export default function CounselingScreen({ setScreen }) {
       () => setIsSpeaking(true),
       () => {
         const elapsed = Date.now() - startTime;
-        if (elapsed > 2500) {
+        if (elapsed > 2000) {
           if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
           setIsSpeaking(false);
         }
@@ -148,7 +148,6 @@ export default function CounselingScreen({ setScreen }) {
 
   const uiState = getJiwooInteractiveState();
 
-  // Fungsi utama pengirim pesan (baik dari Ketikan Teks maupun Suara Mic)
   const sendMessageToJiwoo = async (rawText) => {
     const trimmed = (rawText || "").trim();
     if (!trimmed || isLoading) return;
@@ -200,7 +199,6 @@ export default function CounselingScreen({ setScreen }) {
     await sendMessageToJiwoo(inputText);
   };
 
-  // Fungsi Tombol Mikrofon (Mulai / Berhenti Berbicara Langsung ke Jiwoo)
   const handleMicClick = () => {
     if (isLoading) return;
 
@@ -275,7 +273,7 @@ export default function CounselingScreen({ setScreen }) {
   };
 
   return (
-    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-21.5 max-md:landscape:pb-1,5 md:py-7 px-3 sm:px-5 md:px-8 text-center">
+    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-[86px] max-md:landscape:pb-[74px] md:py-7 px-3 sm:px-5 md:px-8 text-center">
       <div className="flex-1 min-h-0 w-full flex flex-col max-md:landscape:flex-row md:grid md:grid-cols-12 gap-1.5 max-md:landscape:gap-4 md:gap-7 items-stretch overflow-hidden">
         {/* PANEL KIRI: Panggung Maskot Interaktif Jiwoo */}
         <div className="shrink-0 max-md:landscape:w-[38%] md:col-span-5 flex flex-col items-center justify-center bg-transparent md:bg-[#F6E4CE]/80 md:border-2 md:border-[#4A3525]/25 md:rounded-3xl p-0.5 md:p-7 text-center md:h-full overflow-hidden">
@@ -453,7 +451,6 @@ export default function CounselingScreen({ setScreen }) {
             onSubmit={handleTextSubmit}
             className="w-full pt-2.5 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-1.5 sm:gap-2 shrink-0 bg-[#FDF3E7]/90 md:bg-transparent backdrop-blur-xs"
           >
-            {/* Tombol Mute/Unmute khusus Mobile */}
             <button
               type="button"
               onClick={toggleMute}
@@ -463,7 +460,6 @@ export default function CounselingScreen({ setScreen }) {
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
 
-            {/* Tombol Mikrofon (Bicara Langsung ke Jiwoo di HP & Laptop) */}
             <button
               type="button"
               onClick={handleMicClick}
@@ -510,7 +506,6 @@ export default function CounselingScreen({ setScreen }) {
         </div>
       </div>
 
-      {/* Bottom Navbar Khusus Mobile: Klik tombol tengah juga bisa langsung mengaktifkan Mic */}
       <BottomNavbar
         activeScreen={5}
         setScreen={setScreen}
