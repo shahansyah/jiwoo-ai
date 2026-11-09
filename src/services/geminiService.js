@@ -1,57 +1,88 @@
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
 const BASE_V1BETA_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/";
+  "https://generativelanguage.googleapis.com/v1beta/";
 
 let conversationHistory = [];
+let workingModelCache = null;
 
 export function resetJiwooMemory() {
   conversationHistory = [];
 }
 
-function getSmartCounselingFallback(userMessage) {
-  const lower = userMessage.toLowerCase().trim();
+// Cari otomatis model Gemini yang diizinkan untuk API Key kamu
+async function getActiveModel() {
+  if (workingModelCache) return workingModelCache;
 
-  if (
-    lower.includes("bunuh diri") ||
-    lower.includes("mengakhiri hidup") ||
-    lower.includes("ingin mati") ||
-    lower.includes("melukai diri")
-  ) {
-    return {
-      reply:
-        "Tolong jangan lakukan itu ya. Hidupmu sangat berharga, dan kamu enggak harus memikul beban seberat ini sendirian. Saat pikiran lagi kalut, rasanya memang seperti buntu, tapi selalu ada jalan keluar. Tarik napas pelan-pelan sekarang, coba hubungi orang terdekat yang kamu percaya atau layanan konseling SEJIWA di 119 ekstensi 8. Aku di sini temani kamu, ceritakan pelan-pelan apa yang bikin kamu merasa seberat ini.",
-      distortion: "Hopelessness (Merasa Tanpa Harapan)",
-      reframing:
-        "Rasa sakit saat ini bersifat sementara, namun hidupmu sangat berharga dan selalu ada bantuan yang siap mendukungmu.",
-      mood: "empathetic",
-    };
+  try {
+    const res = await fetch(
+      `${BASE_V1BETA_URL}models?key=${GEMINI_API_KEY}`,
+      {
+        headers: { "x-goog-api-key": GEMINI_API_KEY },
+      },
+    );
+    const data = await res.json();
+
+    if (data?.models && Array.isArray(data.models)) {
+      const available = data.models
+        .filter(
+          (m) =>
+            m.supportedGenerationMethods?.includes("generateContent") &&
+            m.name.includes("gemini") &&
+            !m.name.includes("tts") &&
+            !m.name.includes("image") &&
+            !m.name.includes("embedding"),
+        )
+        .map((m) => m.name.replace("models/", ""));
+
+      const priority = [
+        "gemini-3.0-flash",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+      ];
+
+      for (const p of priority) {
+        const found = available.find((a) => a === p || a.startsWith(p));
+        if (found) {
+          workingModelCache = found;
+          return found;
+        }
+      }
+
+      if (available.length > 0) {
+        workingModelCache = available[0];
+        return available[0];
+      }
+    }
+  } catch {
+    // Lanjut ke default
   }
 
-  return {
-    reply:
-      "Aku paham maksudmu. Kadang hal seperti itu memang bikin kita banyak pikiran kalau dilihat dari satu sisi saja. Coba ceritakan sedikit lagi bagian mana yang paling bikin kamu ragu atau kepikiran saat ini?",
-    distortion: null,
-    reframing: null,
-    mood: "friendly",
-  };
+  return "gemini-3.0-flash";
 }
 
 export async function getJiwooResponse(userMessage) {
   if (!GEMINI_API_KEY) {
-    return getSmartCounselingFallback(userMessage);
+    return {
+      reply:
+        "Hmm, sepertinya VITE_GEMINI_API_KEY belum terbaca di browser. Pastikan di Vercel tipenya sudah 'Config' (bukan Secret) lalu klik Redeploy ya!",
+      distortion: null,
+      reframing: null,
+      mood: "friendly",
+    };
   }
 
-  // Prompt bergaya Gemini Live: Lisan, natural, to-the-point, tanpa paksaan format JSON yang membuat bahasa kaku
-  const systemPrompt = `Kamu adalah Jiwoo, teman diskusi dan konselor AI yang berbicara persis dengan gaya Gemini Live: sangat natural, hangat, cerdas, objektif, dan langsung ke inti pembicaraan.
+  // Karakter Jiwoo: Santai, Akrab, Ekspresif, Tidak Kaku/Formal
+  const systemPrompt = `Kamu adalah Jiwoo, sahabat curhat sekaligus konselor sebaya (peer counselor) yang asik, hangat, ekspresif, dan suportif.
 
-CARA BERBICARA (WAJIB DIIKUTI):
-1. Gunakan bahasa Indonesia lisan yang mengalir alami untuk diucapkan dengan suara (seperti mengobrol langsung di telepon). Jangan gunakan poin-poin bernomor, jangan gunakan tanda bintang markdown (*), dan jangan terdengar seperti robot atau buku teks.
-2. Jawablah secara ringkas, padat, dan bernas (sekitar 2 sampai 4 kalimat saja per balasan) agar nyaman didengarkan, persis seperti gaya bicara Gemini Live.
-3. Jika pengguna bertanya pendapat umum (contoh: "Menurutmu kuliah penting enggak?"), berikan sudut pandang yang berimbang, realistis, dan membuka wawasan seperti teman diskusi yang pintar.
-4. Jika pengguna sedang curhat, sedih, atau overthinking, validasi perasaannya secara singkat lalu berikan nasihat praktis yang menenangkan.
-5. OPSIONAL KHUSUS CURHAT BERAT: Hanya jika pengguna jelas-jelas menunjukkan pola pikir negatif yang ekstrem (overthinking berat/menyalahkan diri sendiri), tambahkan baris baru di paling akhir dengan format:
-[CBT: Nama Pola Pikir | Satu kalimat sudut pandang baru yang positif]
-Jika pengguna hanya bertanya biasa atau mengobrol santai, JANGAN tulis tag [CBT: ...] sama sekali.`;
+ATURAN GAYA BICARA (SANGAT PENTING):
+1. JANGAN gunakan bahasa yang kaku, baku, atau terlalu formal. Gunakan bahasa percakapan sehari-hari anak muda Indonesia yang sopan tapi akrab dan santai (gunakan kata seperti "aku-kamu", "banget", "nggak", "kok", "sih", "yuk", "wajar banget").
+2. Jawablah setiap pesan pengguna secara SPESIFIK dan NYAMBUNG. Kalau pengguna menyapa "Halo Jiwo" atau "hloi apa", balas sapaannya dengan ceria dan tanyakan kabar atau kesibukannya hari ini.
+3. Buat kalimat yang pendek, enak didengar saat diucapkan dengan suara (maksimal 2-3 kalimat saja per balasan) supaya obrolan terasa hidup dua arah seperti teleponan sama sahabat dekat.
+4. Kalau pengguna lagi curhat masalah berat atau minta saran, dengarkan dengan tulus, kasih validasi yang menenangkan, lalu berikan saran praktis yang membumi.
+5. OPSIONAL: Hanya jika pengguna benar-benar menunjukkan pikiran negatif berlebih (overthinking parah), tambahkan di baris paling bawah:
+[CBT: Nama Pola Pikir | Satu kalimat sudut pandang baru yang lebih tenang]
+Untuk sapaan atau obrolan biasa, JANGAN sertakan tag [CBT: ...] sama sekali.`;
 
   conversationHistory.push({
     role: "user",
@@ -60,33 +91,22 @@ Jika pengguna hanya bertanya biasa atau mengobrol santai, JANGAN tulis tag [CBT:
 
   const recentHistory = conversationHistory.slice(-10);
 
-  const payloadContents = [
-    {
-      role: "user",
-      parts: [{ text: "INSTRUKSI GAYA BICARA:\n" + systemPrompt }],
-    },
-    {
-      role: "model",
-      parts: [
-        {
-          text: "Siap, aku akan menjawab setiap obrolan dan pertanyaan dengan gaya bicara lisan yang natural, mengalir, hangat, dan ringkas seperti Gemini Live.",
-        },
-      ],
-    },
-    ...recentHistory,
+  const primaryModel = await getActiveModel();
+  const modelsToTry = [
+    ...new Set([
+      primaryModel,
+      "gemini-3.0-flash",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+    ]),
   ];
 
-  const activeModels = [
-    "gemini-3.0-flash",
-    "gemini-3-flash-preview",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-  ];
+  let lastError = "";
 
-  for (const modelName of activeModels) {
+  for (const modelName of modelsToTry) {
     try {
-      const endpoint =
-        BASE_V1BETA_URL + modelName + ":generateContent?key=" + GEMINI_API_KEY;
+      const endpoint = `${BASE_V1BETA_URL}models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -95,20 +115,28 @@ Jika pengguna hanya bertanya biasa atau mengobrol santai, JANGAN tulis tag [CBT:
           "x-goog-api-key": GEMINI_API_KEY,
         },
         body: JSON.stringify({
-          contents: payloadContents,
+          systemInstruction: {
+            parts: [{ text: systemPrompt }],
+          },
+          contents: recentHistory,
           generationConfig: {
-            temperature: 0.8,
+            temperature: 0.85,
           },
         }),
       });
 
       const data = await response.json();
-      if (!response.ok) continue;
+
+      if (!response.ok) {
+        lastError = data?.error?.message || `HTTP ${response.status}`;
+        continue;
+      }
 
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
       if (!rawText) continue;
 
-      // Pisahkan teks obrolan natural dengan catatan CBT (jika ada)
+      workingModelCache = modelName;
+
       let cleanReply = rawText.replace(/[*#`]/g, "").trim();
       let distortion = null;
       let reframing = null;
@@ -131,11 +159,17 @@ Jika pengguna hanya bertanya biasa atau mengobrol santai, JANGAN tulis tag [CBT:
         reframing,
         mood: "friendly",
       };
-    } catch {
-      // Coba model berikutnya
+    } catch (err) {
+      lastError = err?.message || "Network error";
     }
   }
 
   conversationHistory.pop();
-  return getSmartCounselingFallback(userMessage);
+
+  return {
+    reply: `Waduh, koneksiku ke server Gemini agak terhambat nih (${lastError}). Coba kirim ulang pesanmu sebentar lagi ya!`,
+    distortion: null,
+    reframing: null,
+    mood: "friendly",
+  };
 }

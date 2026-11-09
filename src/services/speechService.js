@@ -1,3 +1,5 @@
+const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+
 let activeAudio = null;
 let activeRecognition = null;
 let isStopped = false;
@@ -9,13 +11,12 @@ export function startListening(onStart, onResult, onError) {
   if (!SpeechRecognition) {
     if (onError) {
       onError(
-        "Browser kamu belum mendukung fitur pengenalan suara. Gunakan Google Chrome atau ketik di kolom chat ya!",
+        "Browser kamu belum mendukung fitur suara. Gunakan Chrome atau ketik di kolom chat ya!",
       );
     }
     return;
   }
 
-  // Hentikan sesi mic sebelumnya jika masih menggantung
   if (activeRecognition) {
     try {
       activeRecognition.abort();
@@ -46,10 +47,10 @@ export function startListening(onStart, onResult, onError) {
       if (onError) onError("");
       return;
     }
-    let msg = "Maaf, suaramu kurang terdengar jelas. Coba bicara lagi ya!";
+    let msg = "Suaramu kurang terdengar jelas nih, coba bicara lagi yuk!";
     if (event.error === "not-allowed") {
       msg =
-        "Izin mikrofon belum aktif. Klik ikon gembok/pengaturan di samping alamat web untuk mengizinkan mikrofon ya.";
+        "Izin mikrofon belum aktif. Klik ikon pengaturan di sebelah alamat web untuk mengizinkan mikrofon ya.";
     }
     if (onError) onError(msg);
   };
@@ -92,6 +93,102 @@ export function stopSpeaking() {
   }
 }
 
+// Konversi PCM 24kHz dari Gemini Native Voice ke WAV
+function pcmBase64ToWavUrl(base64Pcm, sampleRate = 24000) {
+  const binaryString = window.atob(base64Pcm);
+  const pcmLen = binaryString.length;
+  const wavBuffer = new ArrayBuffer(44 + pcmLen);
+  const view = new DataView(wavBuffer);
+
+  const writeString = (offset, str) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + pcmLen, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, pcmLen, true);
+
+  const uint8 = new Uint8Array(wavBuffer, 44);
+  for (let i = 0; i < pcmLen; i++) {
+    uint8[i] = binaryString.charCodeAt(i);
+  }
+
+  const blob = new Blob([wavBuffer], { type: "audio/wav" });
+  return URL.createObjectURL(blob);
+}
+
+// Meminta suara ekspresif & santai dari Gemini Native Audio (Voice: Aoede)
+async function fetchExpressiveGeminiVoice(text) {
+  if (!GEMINI_API_KEY) return null;
+
+  const controller = new AbortController();
+  // Batasi maksimal 4 detik agar user tidak menunggu lama jika jaringan padat
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text:
+                    "Ucapkan kalimat bahasa Indonesia berikut dengan nada bicara gadis muda yang super ramah, santai, ekspresif, ceria, dan tidak kaku seperti sedang mengobrol akrab dengan sahabat:\n\n" +
+                    text,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: "Aoede",
+                },
+              },
+            },
+          },
+        }),
+      },
+    );
+
+    clearTimeout(timeoutId);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const inlineData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+
+    if (inlineData?.data) {
+      return pcmBase64ToWavUrl(inlineData.data, 24000);
+    }
+  } catch {
+    clearTimeout(timeoutId);
+  }
+
+  return null;
+}
+
 function splitTextIntoChunks(text) {
   const clean = (text || "")
     .replace(/[*#_~`]/g, "")
@@ -110,156 +207,113 @@ function splitTextIntoChunks(text) {
       current = (current + " " + sentence).trim();
     } else {
       if (current) chunks.push(current);
-      if (sentence.length <= 165) {
-        current = sentence;
-      } else {
-        const words = sentence.split(/\s+/);
-        let temp = "";
-        for (const w of words) {
-          if ((temp + " " + w).trim().length <= 165) {
-            temp = (temp + " " + w).trim();
-          } else {
-            if (temp) chunks.push(temp);
-            temp = w;
-          }
-        }
-        current = temp;
-      }
+      current = sentence;
     }
   }
   if (current) chunks.push(current);
   return chunks;
 }
 
-function buildTtsUrl(chunkText, serverIndex = 0) {
-  const encoded = encodeURIComponent(chunkText);
-  if (serverIndex === 0) {
-    return (
-      "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=id&q=" +
-      encoded
-    );
-  }
-  if (serverIndex === 1) {
-    return (
-      "https://clients5.google.com/translate_tts?ie=UTF-8&client=dict-chrome-ex&tl=id&q=" +
-      encoded
-    );
-  }
-  return (
-    "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=id&q=" +
-    encoded
-  );
-}
-
-export function speakText(text, onStart, onEnd) {
+export async function speakText(text, onStart, onEnd) {
   stopSpeaking();
   isStopped = false;
 
+  const cleanText = (text || "")
+    .replace(/[*#_~`]/g, "")
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
+    .trim();
+
+  if (!cleanText) {
+    if (onEnd) onEnd();
+    return;
+  }
+
+  // 1. Prioritaskan Suara Ekspresif Gemini (Aoede) agar tidak terdengar kaku/robotik
+  const expressiveWavUrl = await fetchExpressiveGeminiVoice(cleanText);
+  if (isStopped) return;
+
+  if (expressiveWavUrl) {
+    const audio = new Audio(expressiveWavUrl);
+    activeAudio = audio;
+
+    if (onStart) onStart();
+
+    audio.onended = () => {
+      URL.revokeObjectURL(expressiveWavUrl);
+      if (onEnd) onEnd();
+    };
+
+    audio.onerror = () => {
+      URL.revokeObjectURL(expressiveWavUrl);
+      playFastStreamFallback(cleanText, onStart, onEnd);
+    };
+
+    audio.play().catch(() => {
+      playFastStreamFallback(cleanText, onStart, onEnd);
+    });
+    return;
+  }
+
+  // 2. Jika Gemini TTS sedang sibuk/limit, putar stream cadangan dengan tempo lebih ceria (1.12x)
+  playFastStreamFallback(cleanText, onStart, onEnd);
+}
+
+function playFastStreamFallback(text, onStart, onEnd) {
   const chunks = splitTextIntoChunks(text);
   if (chunks.length === 0) {
     if (onEnd) onEnd();
     return;
   }
 
-  let hasStartedCallback = false;
+  let hasStarted = false;
 
-  const playChunk = (index, serverTry = 0) => {
+  const playChunk = (index, useBackup = false) => {
     if (isStopped || index >= chunks.length) {
       if (onEnd) onEnd();
       return;
     }
 
+    const encoded = encodeURIComponent(chunks[index]);
+    const url = useBackup
+      ? "https://clients5.google.com/translate_tts?ie=UTF-8&client=dict-chrome-ex&tl=id&q=" +
+        encoded
+      : "https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=id&q=" +
+        encoded;
+
     const audio = document.createElement("audio");
     audio.referrerPolicy = "no-referrer";
-    audio.preload = "auto";
-    audio.src = buildTtsUrl(chunks[index], serverTry);
-    audio.playbackRate = 1.06;
+    audio.src = url;
+    // Tempo 1.12x menghilangkan kesan lambat/formal pada pembacaan kalimat bahasa Indonesia
+    audio.playbackRate = 1.12;
     activeAudio = audio;
 
-    if (index + 1 < chunks.length) {
-      const nextPreload = document.createElement("audio");
-      nextPreload.referrerPolicy = "no-referrer";
-      nextPreload.preload = "auto";
-      nextPreload.src = buildTtsUrl(chunks[index + 1], 0);
-    }
-
     audio.onplaying = () => {
-      if (!hasStartedCallback) {
-        hasStartedCallback = true;
+      if (!hasStarted) {
+        hasStarted = true;
         if (onStart) onStart();
       }
     };
 
     audio.onended = () => {
-      if (!isStopped) {
-        playChunk(index + 1, 0);
-      }
+      if (!isStopped) playChunk(index + 1, false);
     };
 
     audio.onerror = () => {
-      if (isStopped) return;
-      if (serverTry < 2) {
-        playChunk(index, serverTry + 1);
-      } else {
-        fallbackBrowserSpeech(text, hasStartedCallback ? null : onStart, onEnd);
+      if (!useBackup) {
+        playChunk(index, true);
+      } else if (onEnd) {
+        onEnd();
       }
     };
 
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        if (isStopped) return;
-        if (serverTry < 2) {
-          playChunk(index, serverTry + 1);
-        } else {
-          fallbackBrowserSpeech(
-            text,
-            hasStartedCallback ? null : onStart,
-            onEnd,
-          );
-        }
-      });
-    }
+    audio.play().catch(() => {
+      if (!useBackup) {
+        playChunk(index, true);
+      } else if (onEnd) {
+        onEnd();
+      }
+    });
   };
 
-  const fallbackBrowserSpeech = (fullText, startCb, endCb) => {
-    if (!("speechSynthesis" in window)) {
-      if (endCb) endCb();
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(
-      fullText.replace(/[\u{1F300}-\u{1FAFF}]/gu, ""),
-    );
-    utterance.lang = "id-ID";
-    utterance.rate = 1.05;
-    utterance.pitch = 1.05;
-
-    const voices = window.speechSynthesis.getVoices() || [];
-    const indoVoice =
-      voices.find(
-        (v) =>
-          v.lang.toLowerCase().includes("id") &&
-          v.name.toLowerCase().includes("google"),
-      ) || voices.find((v) => v.lang.toLowerCase().includes("id"));
-
-    if (indoVoice) {
-      utterance.voice = indoVoice;
-    }
-
-    utterance.onstart = () => {
-      if (startCb) startCb();
-    };
-    utterance.onend = () => {
-      if (endCb) endCb();
-    };
-    utterance.onerror = () => {
-      if (endCb) endCb();
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  playChunk(0, 0);
+  playChunk(0, false);
 }
