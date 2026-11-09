@@ -201,7 +201,7 @@ async function fetchGeminiNaturalVoice(text) {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: "Leda",
+                voiceName: "Lyra",
               },
             },
           },
