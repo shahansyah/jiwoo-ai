@@ -2,11 +2,10 @@ const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
 
 let currentAudio = null;
 let activeRecognition = null;
-let isStopped = false;
+let currentSessionId = 0; // Mengunci agar suara tidak pernah berulang / tumpang tindih
 let cachedVoices = [];
-let geminiTtsAvailable = true; // Otomatis dinonaktifkan jika API Key terkena limit kuota TTS
 
-// Muat daftar suara bawaan browser sejak awal
+// Muat daftar suara bawaan browser sejak awal tanpa memicu suara pancingan
 if (typeof window !== "undefined" && "speechSynthesis" in window) {
   const loadVoices = () => {
     cachedVoices = window.speechSynthesis.getVoices() || [];
@@ -15,21 +14,20 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
   window.speechSynthesis.onvoiceschanged = loadVoices;
 }
 
-// Membuka kunci izin suara di Chrome/Safari tepat saat tombol diklik
+// Buka kunci AudioContext tanpa memanggil speechSynthesis palsu yang bikin suara mengulang
 export function unlockSpeechAudio() {
   try {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) {
-      const ctx = new AudioContextClass();
-      if (ctx.state === "suspended") ctx.resume();
-    }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      const silentUtterance = new SpeechSynthesisUtterance("");
-      silentUtterance.volume = 0;
-      window.speechSynthesis.speak(silentUtterance);
+      if (!window.__jiwooAudioCtx) {
+        window.__jiwooAudioCtx = new AudioContextClass();
+      }
+      if (window.__jiwooAudioCtx.state === "suspended") {
+        window.__jiwooAudioCtx.resume();
+      }
     }
   } catch {
-    // Abaikan jika browser tidak memblokir
+    // Abaikan jika browser sudah mengizinkan audio
   }
 }
 
@@ -107,19 +105,26 @@ export function stopListening() {
   }
 }
 
+// Hentikan suara dengan melepas semua listener terlebih dahulu agar TIDAK memicu onerror/pengulangan
 export function stopSpeaking() {
-  isStopped = true;
+  currentSessionId++;
   if (currentAudio) {
     try {
+      currentAudio.onplaying = null;
+      currentAudio.onended = null;
+      currentAudio.onerror = null;
       currentAudio.pause();
-      currentAudio.src = "";
       currentAudio = null;
     } catch {
       // Abaikan
     }
   }
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // Abaikan
+    }
   }
 }
 
@@ -158,12 +163,25 @@ function pcmBase64ToWavUrl(base64Pcm, sampleRate = 24000) {
   return URL.createObjectURL(blob);
 }
 
-// Lapis 1: Gemini TTS ("Leda" / Lyra) dengan batas waktu cepat (2.5 detik) agar tidak pernah gantung
-async function fetchQuickGeminiLyra(text) {
-  if (!GEMINI_API_KEY || !geminiTtsAvailable) return null;
+// Mengubah teks kaku menjadi ejaan lisan yang luwes saat diucapkan
+function makeConversationalIndonesian(text) {
+  return (text || "")
+    .replace(/\[CBT:[\s\S]*?\]/gi, "")
+    .replace(/[*#_~`]/g, "")
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
+    .replace(/\b(tidak)\b/gi, "nggak")
+    .replace(/\b(kamu)\b/gi, "kamu")
+    .replace(/\b(saya)\b/gi, "aku")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Lapis 1: Suara Karakter Lyra ("Leda") dari Gemini 2.5 Native TTS
+async function fetchGeminiLyraAudio(text, sessionId) {
+  if (!GEMINI_API_KEY) return null;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2800);
+  const timeoutId = setTimeout(() => controller.abort(), 6500);
 
   try {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
@@ -175,7 +193,15 @@ async function fetchQuickGeminiLyra(text) {
         "x-goog-api-key": GEMINI_API_KEY,
       },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: text }] }],
+        contents: [
+          {
+            parts: [
+              {
+                text: `Say in a cheerful, warm, relaxed, and natural young Indonesian female voice: ${text}`,
+              },
+            ],
+          },
+        ],
         generationConfig: {
           responseModalities: ["AUDIO"],
           speechConfig: {
@@ -190,13 +216,7 @@ async function fetchQuickGeminiLyra(text) {
     });
 
     clearTimeout(timeoutId);
-    if (!response.ok) {
-      // Jika kuota habis (429) atau model ditolak (400/403/404), matikan percobaan berikutnya agar langsung instan
-      if (response.status >= 400) {
-        geminiTtsAvailable = false;
-      }
-      return null;
-    }
+    if (sessionId !== currentSessionId || !response.ok) return null;
 
     const data = await response.json();
     const inlineData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
@@ -209,8 +229,8 @@ async function fetchQuickGeminiLyra(text) {
   return null;
 }
 
-// Memilih suara perempuan Bahasa Indonesia terbaik (Menolak suara pria/kaku Andika)
-function getBestFemaleIndoVoice() {
+// Memilih suara wanita paling natural di perangkat (Tanpa memecah kalimat agar tidak mengulang)
+function getBestFemaleVoice() {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     return null;
   }
@@ -231,215 +251,119 @@ function getBestFemaleIndoVoice() {
         v.name.toLowerCase().includes("natural"),
     ) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("natural")) ||
-    indoVoices.find((v) => v.name.toLowerCase().includes("google")) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("gadis")) ||
+    indoVoices.find((v) => v.name.toLowerCase().includes("google")) ||
     indoVoices.find((v) => !v.name.toLowerCase().includes("andika")) ||
     indoVoices[0]
   );
 }
 
-// Lapis Pengaman Pasti Bunyi: Web Speech API dengan prosodi ceria/santai gaya Lyra
-function playBrowserLyraVoice(text, onStart, onEnd) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+// Lapis 2: Satu Utterance Utuh (Mencegah pengulangan kalimat di Chrome/Android)
+function playSingleUtteranceVoice(text, sessionId, onStart, onEnd) {
+  if (
+    sessionId !== currentSessionId ||
+    typeof window === "undefined" ||
+    !("speechSynthesis" in window)
+  ) {
     if (onEnd) onEnd();
     return;
   }
 
   window.speechSynthesis.cancel();
 
-  const sentences = text
-    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
-    ?.map((s) => s.trim())
-    .filter(Boolean) || [text];
-
-  const bestVoice = getBestFemaleIndoVoice();
-  let idx = 0;
-  let hasStarted = false;
-
-  const speakNext = () => {
-    if (isStopped || idx >= sentences.length) {
-      if (onEnd) onEnd();
-      return;
-    }
-
-    const sentence = sentences[idx];
-    const utterance = new SpeechSynthesisUtterance(sentence);
-    if (bestVoice) utterance.voice = bestVoice;
-    utterance.lang = "id-ID";
-
-    // Intonasi santai & ekspresif ala remaja (tidak datar/kaku)
-    const isQuestion = sentence.endsWith("?");
-    const isExclamation = sentence.endsWith("!");
-    utterance.rate = isExclamation ? 1.15 : 1.12;
-    utterance.pitch = isQuestion ? 1.18 : isExclamation ? 1.16 : 1.12;
-
-    utterance.onstart = () => {
-      if (!hasStarted) {
-        hasStarted = true;
-        if (onStart) onStart();
-      }
-    };
-
-    utterance.onend = () => {
-      idx++;
-      speakNext();
-    };
-
-    utterance.onerror = () => {
-      idx++;
-      speakNext();
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  speakNext();
-}
-
-function splitTextIntoChunks(text) {
-  const sentences = text.split(/(?<=[.!?])\s+/);
-  const chunks = [];
-  let current = "";
-
-  for (const sentence of sentences) {
-    if ((current + " " + sentence).trim().length <= 165) {
-      current = (current + " " + sentence).trim();
-    } else {
-      if (current) chunks.push(current);
-      if (sentence.length <= 165) {
-        current = sentence;
-      } else {
-        const words = sentence.split(/\s+/);
-        let temp = "";
-        for (const w of words) {
-          if ((temp + " " + w).trim().length <= 165) {
-            temp = (temp + " " + w).trim();
-          } else {
-            if (temp) chunks.push(temp);
-            temp = w;
-          }
-        }
-        current = temp;
-      }
-    }
+  const utterance = new SpeechSynthesisUtterance(text);
+  const bestVoice = getBestFemaleVoice();
+  if (bestVoice) {
+    utterance.voice = bestVoice;
   }
-  if (current) chunks.push(current);
-  return chunks;
-}
+  utterance.lang = "id-ID";
 
-// Lapis 2: Streaming Google Voice (Dengan fallback instan ke Browser Lyra Voice jika diblokir)
-function playCloudStreamWithFallback(text, onStart, onEnd) {
-  const chunks = splitTextIntoChunks(text);
-  if (chunks.length === 0) {
+  // Modulasi suara Lyra: kecepatan sedikit lebih mengalir (1.12) & nada ceria (1.18)
+  utterance.rate = 1.12;
+  utterance.pitch = 1.18;
+  utterance.volume = 1.0;
+
+  let finished = false;
+  const finishOnce = () => {
+    if (finished || sessionId !== currentSessionId) return;
+    finished = true;
     if (onEnd) onEnd();
-    return;
-  }
-
-  let hasStarted = false;
-
-  const playChunk = (index, serverTry = 0) => {
-    if (isStopped || index >= chunks.length) {
-      if (onEnd) onEnd();
-      return;
-    }
-
-    const encoded = encodeURIComponent(chunks[index]);
-    const urls = [
-      `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=id&q=${encoded}`,
-      `https://clients5.google.com/translate_tts?ie=UTF-8&client=dict-chrome-ex&tl=id&q=${encoded}`,
-    ];
-
-    const audio = new Audio(urls[serverTry]);
-    audio.referrerPolicy = "no-referrer";
-    audio.playbackRate = 1.14; // Lebih luwes & tidak mengeja kaku
-    currentAudio = audio;
-
-    audio.onplaying = () => {
-      if (!hasStarted) {
-        hasStarted = true;
-        if (onStart) onStart();
-      }
-    };
-
-    audio.onended = () => {
-      if (!isStopped) playChunk(index + 1, 0);
-    };
-
-    audio.onerror = () => {
-      if (isStopped) return;
-      if (serverTry < 1) {
-        playChunk(index, serverTry + 1);
-      } else if (!hasStarted) {
-        // Jika streaming diblokir jaringan/browser, langsung gunakan suara browser
-        playBrowserLyraVoice(text, onStart, onEnd);
-      } else if (onEnd) {
-        onEnd();
-      }
-    };
-
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        if (isStopped) return;
-        if (!hasStarted) {
-          playBrowserLyraVoice(text, onStart, onEnd);
-        } else if (onEnd) {
-          onEnd();
-        }
-      });
-    }
   };
 
-  playChunk(0, 0);
+  utterance.onstart = () => {
+    if (sessionId !== currentSessionId) {
+      window.speechSynthesis.cancel();
+      return;
+    }
+    if (onStart) onStart();
+  };
+
+  utterance.onend = finishOnce;
+  utterance.onerror = finishOnce;
+
+  window.speechSynthesis.speak(utterance);
 }
 
 export async function speakText(text, onStart, onEnd) {
+  // Hentikan suara sebelumnya dan buat ID sesi baru
   stopSpeaking();
-  isStopped = false;
+  const mySessionId = ++currentSessionId;
 
-  const cleanText = (text || "")
-    .replace(/\[CBT:[\s\S]*?\]/gi, "")
-    .replace(/[*#_~`]/g, "")
-    .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
+  const cleanText = makeConversationalIndonesian(text);
   if (!cleanText) {
     if (onEnd) onEnd();
     return;
   }
 
-  // 1. Coba Gemini Lyra/Leda (Maksimal 2.8 detik, jika gagal langsung lewati)
-  const wavUrl = await fetchQuickGeminiLyra(cleanText);
-  if (isStopped) return;
+  // 1. Coba panggil suara Gemini Native Lyra ("Leda")
+  const wavUrl = await fetchGeminiLyraAudio(cleanText, mySessionId);
+
+  // Jika pengguna sudah menekan tombol lain saat menunggu, batalkan
+  if (mySessionId !== currentSessionId) {
+    if (wavUrl) URL.revokeObjectURL(wavUrl);
+    return;
+  }
 
   if (wavUrl) {
     const audio = new Audio(wavUrl);
+    audio.preservesPitch = true;
     audio.playbackRate = 1.04;
     currentAudio = audio;
 
+    let fallbackTriggered = false;
+    const triggerFallbackOnce = () => {
+      if (fallbackTriggered || mySessionId !== currentSessionId) return;
+      fallbackTriggered = true;
+      URL.revokeObjectURL(wavUrl);
+      playSingleUtteranceVoice(cleanText, mySessionId, onStart, onEnd);
+    };
+
     audio.onplaying = () => {
+      if (mySessionId !== currentSessionId) {
+        audio.pause();
+        return;
+      }
       if (onStart) onStart();
     };
 
     audio.onended = () => {
       URL.revokeObjectURL(wavUrl);
-      if (onEnd) onEnd();
+      if (mySessionId === currentSessionId && onEnd) {
+        onEnd();
+      }
     };
 
-    audio.onerror = () => {
-      URL.revokeObjectURL(wavUrl);
-      playCloudStreamWithFallback(cleanText, onStart, onEnd);
-    };
+    audio.onerror = triggerFallbackOnce;
 
     try {
       await audio.play();
       return;
     } catch {
-      URL.revokeObjectURL(wavUrl);
+      triggerFallbackOnce();
+      return;
     }
   }
 
-  // 2. Jika Gemini TTS limit, jalankan Cloud Stream + Pengaman Browser Lyra Voice
-  playCloudStreamWithFallback(cleanText, onStart, onEnd);
+  // 2. Jika Gemini TTS tidak merespons, putar 1x menggunakan Single Utterance Voice
+  playSingleUtteranceVoice(cleanText, mySessionId, onStart, onEnd);
 }
