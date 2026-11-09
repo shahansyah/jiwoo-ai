@@ -52,7 +52,7 @@ export function startListening(onStart, onResult, onError) {
   if (!SpeechRecognition) {
     if (onError) {
       onError(
-        "Browser kamu belum mendukung fitur mikrofon. Gunakan Chrome atau Edge ya!"
+        "Browser kamu belum mendukung fitur mikrofon. Gunakan Chrome atau Edge ya!",
       );
     }
     return;
@@ -103,7 +103,8 @@ export function startListening(onStart, onResult, onError) {
   try {
     recognition.start();
   } catch {
-    if (onError) onError("Gagal menyalakan mikrofon. Coba klik sekali lagi ya.");
+    if (onError)
+      onError("Gagal menyalakan mikrofon. Coba klik sekali lagi ya.");
   }
 }
 
@@ -175,7 +176,7 @@ async function fetchGeminiNaturalVoice(text) {
   if (!GEMINI_API_KEY) return null;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 4500);
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
 
   try {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
@@ -201,7 +202,7 @@ async function fetchGeminiNaturalVoice(text) {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: "Lyra",
+                voiceName: "Zephyr",
               },
             },
           },
@@ -232,7 +233,7 @@ function getBestIndonesianVoice() {
       : window.speechSynthesis.getVoices() || [];
 
   const indoVoices = voices.filter((v) =>
-    v.lang.toLowerCase().replace("_", "-").includes("id")
+    v.lang.toLowerCase().replace("_", "-").includes("id"),
   );
   if (indoVoices.length === 0) return null;
 
@@ -240,7 +241,7 @@ function getBestIndonesianVoice() {
     indoVoices.find(
       (v) =>
         v.name.toLowerCase().includes("gadis") &&
-        v.name.toLowerCase().includes("natural")
+        v.name.toLowerCase().includes("natural"),
     ) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("gadis")) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("natural")) ||
@@ -265,11 +266,10 @@ function playNaturalBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
   window.speechSynthesis.cancel();
 
   // Pecah per kalimat agar intonasi berhenti sejenak secara alami di tiap titik/tanda tanya
-  const sentences =
-    text
-      .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
-      ?.map((s) => s.trim())
-      .filter(Boolean) || [text];
+  const sentences = text
+    .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
+    ?.map((s) => s.trim())
+    .filter(Boolean) || [text];
 
   let idx = 0;
   let started = false;
@@ -284,8 +284,8 @@ function playNaturalBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
     utterance.voice = bestVoice;
     utterance.lang = "id-ID";
     // Sedikit variasi pitch & kecepatan agar terdengar ramah dan tidak monoton
-    utterance.rate = 1.08;
-    utterance.pitch = 1.08;
+    utterance.rate = 1.12;
+    utterance.pitch = 1.1;
 
     utterance.onstart = () => {
       if (!started) {
@@ -452,7 +452,7 @@ export async function speakText(text, onStart, onEnd) {
     sharedAudio.onerror = () => {
       URL.revokeObjectURL(wavUrl);
       playNaturalBrowserSpeech(cleanText, onStart, onEnd, () =>
-        playStreamFallback(cleanText, onStart, onEnd)
+        playStreamFallback(cleanText, onStart, onEnd),
       );
     };
 
@@ -467,6 +467,6 @@ export async function speakText(text, onStart, onEnd) {
   // 2. Jika Gemini TTS terkena limit, gunakan suara Natural Browser (Gadis Online / Google ID)
   // 3. Jika browser tidak punya voice ID, otomatis jatuh ke Stream Fallback
   playNaturalBrowserSpeech(cleanText, onStart, onEnd, () =>
-    playStreamFallback(cleanText, onStart, onEnd)
+    playStreamFallback(cleanText, onStart, onEnd),
   );
 }
