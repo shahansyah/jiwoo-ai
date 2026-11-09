@@ -47,18 +47,29 @@ export default function CounselingScreen({ setScreen }) {
       return;
     }
 
+    // Langsung aktifkan animasi menjelaskan detik itu juga!
+    setIsSpeaking(true);
+    const startTime = Date.now();
+
+    // Hitung durasi bicara natural berdasarkan jumlah kata (minimal 4 detik)
     const words = (text || "").trim().split(/\s+/).length;
-    const estimatedMs = Math.min(Math.max(words * 400, 3500), 22000);
+    const minDurationMs = Math.min(Math.max(words * 360, 4000), 18000);
+
     fallbackTimerRef.current = setTimeout(() => {
       setIsSpeaking(false);
-    }, estimatedMs);
+    }, minDurationMs);
 
     speakText(
       text,
       () => setIsSpeaking(true),
       () => {
-        if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-        setIsSpeaking(false);
+        const elapsed = Date.now() - startTime;
+        // Jika audio benar-benar selesai diputar (minimal sudah berjalan > 2.5 detik), hentikan animasi
+        // Namun jika gagal instan (< 2.5 detik karena autoplay block), biarkan animasi bicara tetap berjalan sesuai panjang teks!
+        if (elapsed > 2500) {
+          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+          setIsSpeaking(false);
+        }
       },
     );
   };

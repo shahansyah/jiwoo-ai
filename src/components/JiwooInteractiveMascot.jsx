@@ -6,7 +6,7 @@ export default function JiwooInteractiveMascot({
   return (
     <div
       onClick={onClick}
-      title="Klik Jiwoo untuk memutar ulang suara"
+      title="Klik Jiwoo untuk memutar ulang suara & animasi bicara"
       className={`relative select-none cursor-pointer ${className}`}
     >
       <svg
@@ -17,9 +17,8 @@ export default function JiwooInteractiveMascot({
       >
         <defs>
           <style>{`
-            /* Transisi halus saat berganti ekspresi */
             #waving-arm, #cat-head-group, #resting-paw, #ear-left-group, #ear-right-group {
-              transition: transform 0.35s ease-in-out;
+              transition: transform 0.3s ease-in-out;
             }
             #waving-arm { transform-origin: 205px 352px; }
             #cat-head-group { transform-origin: 315px 352px; }
@@ -31,9 +30,7 @@ export default function JiwooInteractiveMascot({
               animation: jiwoo-blink 4.2s infinite;
             }
 
-            /* ==========================================
-               1. MODE MENYAPA (GREETING / IDLE RAMAH)
-               ========================================== */
+            /* 1. MODE MENYAPA (GREETING) */
             .state-greeting #waving-arm {
               animation: jiwoo-wave-hello 2.2s ease-in-out infinite;
             }
@@ -44,62 +41,60 @@ export default function JiwooInteractiveMascot({
               animation: jiwoo-paw-tap-idle 4s ease-in-out infinite;
             }
 
-            /* ==========================================
-               2. MODE MENYIMAK (LISTENING SAAT USER CURHAT)
-               ========================================== */
+            /* 2. MODE MENYIMAK (LISTENING) */
             .state-listening #cat-head-group {
-              animation: jiwoo-head-nod-listen 1.5s ease-in-out infinite;
+              animation: jiwoo-head-nod-listen 1.4s ease-in-out infinite;
             }
             .state-listening #waving-arm {
-              animation: jiwoo-arm-calm-listen 2.4s ease-in-out infinite;
+              animation: jiwoo-arm-calm-listen 2.2s ease-in-out infinite;
             }
             .state-listening #ear-left-group {
-              animation: jiwoo-ear-twitch-left 1.2s ease-in-out infinite;
+              animation: jiwoo-ear-twitch-left 1.1s ease-in-out infinite;
             }
             .state-listening #ear-right-group {
-              animation: jiwoo-ear-twitch-right 1.2s ease-in-out infinite;
+              animation: jiwoo-ear-twitch-right 1.1s ease-in-out infinite;
             }
             .state-listening #resting-paw {
               animation: jiwoo-paw-tap-idle 2.2s ease-in-out infinite;
             }
 
-            /* ==========================================
-               3. MODE BERPIKIR (THINKING / LOADING CBT)
-               ========================================== */
+            /* 3. MODE BERPIKIR (THINKING) */
             .state-thinking #cat-head-group {
-              animation: jiwoo-head-thinking 1.4s ease-in-out infinite;
+              animation: jiwoo-head-thinking 1.2s ease-in-out infinite;
             }
             .state-thinking #waving-arm {
-              animation: jiwoo-arm-thinking 1.4s ease-in-out infinite;
+              animation: jiwoo-arm-thinking 1.2s ease-in-out infinite;
             }
             .state-thinking #resting-paw {
-              animation: jiwoo-paw-tap-fast 0.55s ease-in-out infinite;
+              animation: jiwoo-paw-tap-fast 0.5s ease-in-out infinite;
             }
 
-            /* ==========================================
-               4. MODE MENJELASKAN (EXPLAINING / SPEAKING)
-               ========================================== */
+            /* 4. MODE MENJELASKAN / BERBICARA (EXPLAINING) */
             .state-explaining #cat-head-group {
-              animation: jiwoo-head-explain 0.9s ease-in-out infinite;
+              animation: jiwoo-head-explain 0.65s ease-in-out infinite;
             }
             .state-explaining #waving-arm {
-              animation: jiwoo-arm-gesture-explain 0.75s ease-in-out infinite;
+              animation: jiwoo-arm-gesture-explain 0.55s ease-in-out infinite;
             }
             .state-explaining #resting-paw {
-              animation: jiwoo-paw-explain 1.1s ease-in-out infinite;
+              animation: jiwoo-paw-explain 0.75s ease-in-out infinite;
+            }
+            .state-explaining #ear-left-group {
+              animation: jiwoo-ear-twitch-left 0.9s ease-in-out infinite;
+            }
+            .state-explaining #ear-right-group {
+              animation: jiwoo-ear-twitch-right 0.9s ease-in-out infinite;
             }
             .state-explaining #talking-mouth {
-              transform-origin: 299px 248px;
-              animation: jiwoo-mouth-talk 0.28s ease-in-out infinite alternate;
+              transform-origin: 298px 252px;
+              animation: jiwoo-mouth-talk 0.19s ease-in-out infinite alternate;
             }
 
-            /* --- KEYFRAMES DETAIL GERAKAN ORGAN --- */
             @keyframes jiwoo-blink {
               0%, 44%, 48%, 94%, 98%, 100% { transform: scaleY(1); }
               46%, 96% { transform: scaleY(0.08); }
             }
 
-            /* Keyframes Mode 1: Greeting */
             @keyframes jiwoo-wave-hello {
               0%, 100% { transform: rotate(0deg); }
               25% { transform: rotate(12deg); }
@@ -115,7 +110,6 @@ export default function JiwooInteractiveMascot({
               87% { transform: translateY(-4px) scaleY(1.04); }
             }
 
-            /* Keyframes Mode 2: Listening (Mengangguk & Telinga Menyimak) */
             @keyframes jiwoo-head-nod-listen {
               0%, 100% { transform: rotate(-3deg) translateY(2px) scale(1.03); }
               50% { transform: rotate(1deg) translateY(9px) scale(1.04); }
@@ -126,16 +120,15 @@ export default function JiwooInteractiveMascot({
             }
             @keyframes jiwoo-ear-twitch-left {
               0%, 100% { transform: rotate(0deg); }
-              35% { transform: rotate(-6deg) scale(1.03); }
-              70% { transform: rotate(2deg); }
+              35% { transform: rotate(-7deg) scale(1.04); }
+              70% { transform: rotate(3deg); }
             }
             @keyframes jiwoo-ear-twitch-right {
               0%, 100% { transform: rotate(0deg); }
-              45% { transform: rotate(7deg) scale(1.03); }
-              80% { transform: rotate(-2deg); }
+              45% { transform: rotate(8deg) scale(1.04); }
+              80% { transform: rotate(-3deg); }
             }
 
-            /* Keyframes Mode 3: Thinking */
             @keyframes jiwoo-head-thinking {
               0%, 100% { transform: rotate(-6deg) translateY(-2px); }
               50% { transform: rotate(6deg) translateY(3px); }
@@ -149,22 +142,22 @@ export default function JiwooInteractiveMascot({
               50% { transform: translateY(-7px) scaleY(1.07); }
             }
 
-            /* Keyframes Mode 4: Explaining (Gestur Tangan & Mulut Bicara) */
+            /* Gerakan Ekspresif Saat Jiwoo Berbicara / Menjelaskan */
             @keyframes jiwoo-head-explain {
-              0%, 100% { transform: rotate(-2deg) translateY(0px); }
-              50% { transform: rotate(3.5deg) translateY(-5px); }
+              0%, 100% { transform: rotate(-3.5deg) translateY(0px) scale(1); }
+              50% { transform: rotate(4.5deg) translateY(-7px) scale(1.03); }
             }
             @keyframes jiwoo-arm-gesture-explain {
-              0%, 100% { transform: rotate(-4deg) translateY(2px); }
-              50% { transform: rotate(15deg) translateY(-8px) scale(1.03); }
+              0%, 100% { transform: rotate(-8deg) translateY(4px); }
+              50% { transform: rotate(18deg) translateY(-10px) scale(1.05); }
             }
             @keyframes jiwoo-paw-explain {
-              0%, 100% { transform: translateY(0px); }
-              50% { transform: translateY(-6px) rotate(-3deg); }
+              0%, 100% { transform: translateY(0px) scaleY(1); }
+              50% { transform: translateY(-8px) scaleY(1.08) rotate(-4deg); }
             }
             @keyframes jiwoo-mouth-talk {
-              0% { transform: scaleY(0.35) scaleX(0.92); }
-              100% { transform: scaleY(1.18) scaleX(1.06); }
+              0% { transform: scaleY(0.2) scaleX(0.88); }
+              100% { transform: scaleY(1.35) scaleX(1.12); }
             }
           `}</style>
 
@@ -235,9 +228,7 @@ export default function JiwooInteractiveMascot({
               <path d="M 388 131 C 394 134, 399 137, 403 140" />
             </g>
 
-            {/* FITUR WAJAH DINAMIS SESUAI MODE */}
             <g id="cat-face-features">
-              {/* Mata Kiri */}
               <g transform="translate(251, 201) rotate(8)">
                 <g className="jiwoo-eye">
                   <ellipse
@@ -253,13 +244,12 @@ export default function JiwooInteractiveMascot({
                     r={mode === "listening" ? "5" : "4.2"}
                     fill="#FFFFFF"
                   />
-                  {mode === "listening" && (
+                  {(mode === "listening" || mode === "explaining") && (
                     <circle cx="4.5" cy="4" r="2.2" fill="#FFFFFF" />
                   )}
                 </g>
               </g>
 
-              {/* Mata Kanan */}
               <g transform="translate(356, 218) rotate(8)">
                 <g className="jiwoo-eye">
                   <ellipse
@@ -275,13 +265,12 @@ export default function JiwooInteractiveMascot({
                     r={mode === "listening" ? "5" : "4.2"}
                     fill="#FFFFFF"
                   />
-                  {mode === "listening" && (
+                  {(mode === "listening" || mode === "explaining") && (
                     <circle cx="4.5" cy="4" r="2.2" fill="#FFFFFF" />
                   )}
                 </g>
               </g>
 
-              {/* Rona Pipi (Lebih merona saat menyimak/menjelaskan) */}
               <ellipse
                 cx="232"
                 cy="228"
@@ -289,9 +278,7 @@ export default function JiwooInteractiveMascot({
                 ry="7.5"
                 fill="#f48c98"
                 opacity={
-                  mode === "listening" || mode === "explaining"
-                    ? "0.65"
-                    : "0.45"
+                  mode === "listening" || mode === "explaining" ? "0.7" : "0.45"
                 }
                 transform="rotate(6 232 228)"
               />
@@ -302,14 +289,11 @@ export default function JiwooInteractiveMascot({
                 ry="7.5"
                 fill="#f48c98"
                 opacity={
-                  mode === "listening" || mode === "explaining"
-                    ? "0.65"
-                    : "0.45"
+                  mode === "listening" || mode === "explaining" ? "0.7" : "0.45"
                 }
                 transform="rotate(6 372 246)"
               />
 
-              {/* Hidung */}
               <path
                 d="M 290 225 C 296 222, 307 224, 311 229 C 314 233, 305 242, 299 242 C 293 241, 286 229, 290 225 Z"
                 fill="#593427"
@@ -322,7 +306,6 @@ export default function JiwooInteractiveMascot({
                 strokeLinecap="round"
               />
 
-              {/* Garis Bibir Atas Kucing */}
               <path
                 d="M 268 245 C 277 254, 291 255, 296 249"
                 fill="none"
@@ -338,31 +321,35 @@ export default function JiwooInteractiveMascot({
                 strokeLinecap="round"
               />
 
-              {/* Mulut Terbuka & Lidah Bergerak Saat Mode Explaining (Menjelaskan) */}
+              {/* Mulut Terbuka & Bergerak Aktif Saat Mode Explaining (Berbicara) */}
               {mode === "explaining" && (
                 <g id="talking-mouth">
                   <path
-                    d="M 282 250 C 282 271, 314 273, 315 252 Z"
+                    d="M 279 249 C 279 276, 317 278, 318 251 Z"
                     fill="#d95b66"
                     stroke="#593427"
-                    strokeWidth="5"
+                    strokeWidth="5.5"
                     strokeLinejoin="round"
                   />
-                  <ellipse cx="298" cy="262" rx="9" ry="5" fill="#f48c98" />
+                  <ellipse cx="298" cy="264" rx="10" ry="5.5" fill="#f48c98" />
                 </g>
               )}
 
-              {/* Mulut Kecil "o" Fokus Saat Mode Listening (Menyimak) */}
               {mode === "listening" && (
                 <ellipse cx="297" cy="256" rx="5.5" ry="4" fill="#593427" />
               )}
             </g>
           </g>
 
-          {/* Tangan Kiri (Melambai / Menyimak / Gestur Menjelaskan) */}
           <g id="waving-arm">
             <g clipPath="url(#waving-paw-clip-interactive)">
-              <rect x="135" y="195" width="135" height="185" fill="#fca95d" />
+              <rect
+                x="135"
+                y="195"
+                width="135"
+                height="185"
+                fill="#fca95d"
+              />
               <g fill="#94622b">
                 <path d="M 150 289 C 165 285, 179 286, 179 291 C 179 296, 166 299, 151 301 Z" />
                 <path d="M 153 312 C 164 306, 174 306, 175 310 C 176 314, 166 320, 155 323 Z" />
@@ -418,7 +405,6 @@ export default function JiwooInteractiveMascot({
           </g>
         </g>
 
-        {/* Garis Meja */}
         <line
           x1="94"
           y1="352"
@@ -429,7 +415,6 @@ export default function JiwooInteractiveMascot({
           strokeLinecap="round"
         />
 
-        {/* Tangan Kanan di Atas Meja */}
         <g id="resting-paw">
           <path
             d="M 366 352 C 356 332, 366 309, 395 309 C 424 309,434 330, 429 352 Z"
