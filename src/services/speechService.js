@@ -1,12 +1,16 @@
 const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
 
+// Daftar model TTS Gemini & prioritas karakter suara Lyra
+const TTS_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-2.0-flash-exp"];
+const LYRA_VOICE_CANDIDATES = ["Lyra", "Leda", "Zephyr"];
+
 let sharedAudio = null;
 let audioCtx = null;
 let activeRecognition = null;
 let isStopped = false;
 let cachedVoices = [];
+let workingVoiceName = null; // Menyimpan kode suara Lyra yang diterima server agar respons berikutnya instan
 
-// Muat daftar suara natural bawaan browser sejak awal
 if (typeof window !== "undefined" && "speechSynthesis" in window) {
   const loadVoices = () => {
     cachedVoices = window.speechSynthesis.getVoices() || [];
@@ -15,7 +19,7 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
   window.speechSynthesis.onvoiceschanged = loadVoices;
 }
 
-// WAV hening 1 milidetik untuk membuka blokir autoplay browser saat klik tombol
+// Audio hening 1ms untuk membuka kunci autoplay browser tepat saat tombol diklik
 const SILENT_WAV =
   "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
@@ -41,7 +45,7 @@ export function unlockSpeechAudio() {
       if (audioCtx.state === "suspended") audioCtx.resume();
     }
   } catch {
-    // Abaikan jika browser tidak memerlukan unlock
+    // Abaikan jika browser tidak memblokir
   }
 }
 
@@ -135,7 +139,7 @@ export function stopSpeaking() {
   }
 }
 
-// Konversi audio PCM 24kHz dari Gemini Native TTS ke WAV
+// Mengubah raw PCM 24kHz dari Gemini ke file WAV yang siap diputar browser
 function pcmBase64ToWavUrl(base64Pcm, sampleRate = 24000) {
   const binaryString = window.atob(base64Pcm);
   const pcmLen = binaryString.length;
@@ -171,15 +175,13 @@ function pcmBase64ToWavUrl(base64Pcm, sampleRate = 24000) {
   return URL.createObjectURL(blob);
 }
 
-// Lapis 1: Suara manusia asli dari Gemini Live (Aoede)
-async function fetchGeminiNaturalVoice(text) {
-  if (!GEMINI_API_KEY) return null;
-
+// Memanggil satu kandidat voiceName ke Gemini TTS
+async function requestGeminiVoice(text, voiceName, modelName) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
 
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
     const response = await fetch(endpoint, {
       method: "POST",
       signal: controller.signal,
@@ -192,7 +194,7 @@ async function fetchGeminiNaturalVoice(text) {
           {
             parts: [
               {
-                text: `Ucapkan kalimat bahasa Indonesia ini dengan gaya bicara teman wanita muda yang sangat natural, hangat, santai, ekspresif, dan sama sekali tidak kaku: "${text}"`,
+                text: `Kamu adalah Lyra, sahabat cewek Indonesia yang ceria, santai, hangat, dan suportif. Ucapkan kalimat berikut dengan intonasi ngobrol sehari-hari yang super luwes, ekspresif, tidak baku, dan sama sekali tidak kaku seperti robot: "${text}"`,
               },
             ],
           },
@@ -202,7 +204,7 @@ async function fetchGeminiNaturalVoice(text) {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: "Zephyr",
+                voiceName: voiceName,
               },
             },
           },
@@ -216,6 +218,7 @@ async function fetchGeminiNaturalVoice(text) {
     const data = await response.json();
     const inlineData = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData;
     if (inlineData?.data) {
+      workingVoiceName = voiceName;
       return pcmBase64ToWavUrl(inlineData.data, 24000);
     }
   } catch {
@@ -224,8 +227,33 @@ async function fetchGeminiNaturalVoice(text) {
   return null;
 }
 
-// Mencari suara wanita Indonesia paling natural di sistem (Gadis Online Natural / Google Bahasa Indonesia)
-function getBestIndonesianVoice() {
+// Lapis 1: Suara Karakter Lyra dari Gemini Native Audio
+async function fetchLyraGeminiVoice(text) {
+  if (!GEMINI_API_KEY) {
+    console.warn(
+      "VITE_GEMINI_API_KEY kosong di .env! Menggunakan suara cadangan.",
+    );
+    return null;
+  }
+
+  const candidates = workingVoiceName
+    ? [
+        workingVoiceName,
+        ...LYRA_VOICE_CANDIDATES.filter((v) => v !== workingVoiceName),
+      ]
+    : LYRA_VOICE_CANDIDATES;
+
+  for (const voiceName of candidates) {
+    if (isStopped) return null;
+    const wavUrl = await requestGeminiVoice(text, voiceName, TTS_MODELS[0]);
+    if (wavUrl) return wavUrl;
+  }
+
+  return null;
+}
+
+// Mencari suara wanita Neural Indonesia (Menghindari suara pria/robot kaku Microsoft Andika)
+function getBestFemaleIndonesianVoice() {
   if (!("speechSynthesis" in window)) return null;
   const voices =
     cachedVoices.length > 0
@@ -237,6 +265,7 @@ function getBestIndonesianVoice() {
   );
   if (indoVoices.length === 0) return null;
 
+  // Prioritaskan Gadis Online (Natural) atau Google Bahasa Indonesia, hindari Andika (suara cowok kaku)
   return (
     indoVoices.find(
       (v) =>
@@ -246,18 +275,19 @@ function getBestIndonesianVoice() {
     indoVoices.find((v) => v.name.toLowerCase().includes("gadis")) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("natural")) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("google")) ||
-    indoVoices[0]
+    indoVoices.find((v) => !v.name.toLowerCase().includes("andika")) ||
+    null
   );
 }
 
-// Lapis 2: Web Speech API dengan prosodi luwes
-function playNaturalBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
+// Lapis 2: Web Speech API dengan karakter Lyra (Pitch & Rate remaja ceria)
+function playLyraBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
   if (!("speechSynthesis" in window)) {
     onFallbackNeeded();
     return;
   }
 
-  const bestVoice = getBestIndonesianVoice();
+  const bestVoice = getBestFemaleIndonesianVoice();
   if (!bestVoice) {
     onFallbackNeeded();
     return;
@@ -265,7 +295,6 @@ function playNaturalBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
 
   window.speechSynthesis.cancel();
 
-  // Pecah per kalimat agar intonasi berhenti sejenak secara alami di tiap titik/tanda tanya
   const sentences = text
     .match(/[^.!?]+[.!?]+|[^.!?]+$/g)
     ?.map((s) => s.trim())
@@ -280,12 +309,16 @@ function playNaturalBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(sentences[idx]);
+    const sentence = sentences[idx];
+    const utterance = new SpeechSynthesisUtterance(sentence);
     utterance.voice = bestVoice;
     utterance.lang = "id-ID";
-    // Sedikit variasi pitch & kecepatan agar terdengar ramah dan tidak monoton
-    utterance.rate = 1.12;
-    utterance.pitch = 1.1;
+
+    // Karakter Lyra: lebih cepat sedikit (1.14x) dan nada sedikit lebih tinggi/ceria (1.15)
+    const isQuestion = sentence.endsWith("?");
+    const isExclamation = sentence.endsWith("!");
+    utterance.rate = isExclamation ? 1.16 : 1.13;
+    utterance.pitch = isQuestion ? 1.2 : isExclamation ? 1.18 : 1.14;
 
     utterance.onstart = () => {
       if (!started) {
@@ -313,7 +346,7 @@ function playNaturalBrowserSpeech(text, onStart, onEnd, onFallbackNeeded) {
   speakNextSentence();
 }
 
-// Lapis 3: Streaming Audio Cadangan menggunakan elemen sharedAudio yang sudah di-unlock
+// Lapis 3: Streaming Audio Cadangan dengan kecepatan santai
 function splitTextIntoChunks(text) {
   const sentences = text.split(/(?<=[.!?])\s+/);
   const chunks = [];
@@ -373,7 +406,9 @@ function playStreamFallback(text, onStart, onEnd) {
 
     sharedAudio.referrerPolicy = "no-referrer";
     sharedAudio.src = urls[serverTry];
-    sharedAudio.playbackRate = 1.12;
+    // Mempercepat tempo sedikit dan menjaga pitch agar tidak terdengar seperti robot mengeja
+    sharedAudio.playbackRate = 1.18;
+    sharedAudio.preservesPitch = false;
     sharedAudio.volume = 1.0;
 
     sharedAudio.onplaying = () => {
@@ -416,7 +451,9 @@ export async function speakText(text, onStart, onEnd) {
   stopSpeaking();
   isStopped = false;
 
+  // Bersihkan simbol markdown dan tag CBT jika tidak sengaja terbawa
   const cleanText = (text || "")
+    .replace(/\[CBT:[\s\S]*?\]/gi, "")
     .replace(/[*#_~`]/g, "")
     .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
     .replace(/\s+/g, " ")
@@ -431,13 +468,14 @@ export async function speakText(text, onStart, onEnd) {
     sharedAudio = new Audio();
   }
 
-  // 1. Coba ambil suara manusia asli Gemini Live (Aoede)
-  const wavUrl = await fetchGeminiNaturalVoice(cleanText);
+  // 1. Utamakan Suara Karakter Lyra dari Gemini Native TTS
+  const wavUrl = await fetchLyraGeminiVoice(cleanText);
   if (isStopped) return;
 
   if (wavUrl) {
     sharedAudio.src = wavUrl;
-    sharedAudio.playbackRate = 1.0;
+    sharedAudio.preservesPitch = true;
+    sharedAudio.playbackRate = 1.03; // Sedikit lebih gesit agar terdengar santai
     sharedAudio.volume = 1.0;
 
     sharedAudio.onplaying = () => {
@@ -451,7 +489,7 @@ export async function speakText(text, onStart, onEnd) {
 
     sharedAudio.onerror = () => {
       URL.revokeObjectURL(wavUrl);
-      playNaturalBrowserSpeech(cleanText, onStart, onEnd, () =>
+      playLyraBrowserSpeech(cleanText, onStart, onEnd, () =>
         playStreamFallback(cleanText, onStart, onEnd),
       );
     };
@@ -464,9 +502,8 @@ export async function speakText(text, onStart, onEnd) {
     }
   }
 
-  // 2. Jika Gemini TTS terkena limit, gunakan suara Natural Browser (Gadis Online / Google ID)
-  // 3. Jika browser tidak punya voice ID, otomatis jatuh ke Stream Fallback
-  playNaturalBrowserSpeech(cleanText, onStart, onEnd, () =>
+  // 2. Cadangan: Suara Wanita Natural Browser dengan modulasi gaya Lyra
+  playLyraBrowserSpeech(cleanText, onStart, onEnd, () =>
     playStreamFallback(cleanText, onStart, onEnd),
   );
 }
