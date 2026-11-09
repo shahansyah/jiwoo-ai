@@ -1,4 +1,5 @@
 let activeAudio = null;
+let activeRecognition = null;
 let isStopped = false;
 
 export function startListening(onStart, onResult, onError) {
@@ -8,16 +9,26 @@ export function startListening(onStart, onResult, onError) {
   if (!SpeechRecognition) {
     if (onError) {
       onError(
-        "Browser kamu belum mendukung fitur pengenalan suara. Silakan ketik ceritamu di kolom chat ya!",
+        "Browser kamu belum mendukung fitur pengenalan suara. Gunakan Google Chrome atau ketik di kolom chat ya!",
       );
     }
     return;
+  }
+
+  // Hentikan sesi mic sebelumnya jika masih menggantung
+  if (activeRecognition) {
+    try {
+      activeRecognition.abort();
+    } catch {
+      // Abaikan
+    }
   }
 
   const recognition = new SpeechRecognition();
   recognition.lang = "id-ID";
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
+  activeRecognition = recognition;
 
   recognition.onstart = () => {
     if (onStart) onStart();
@@ -25,15 +36,44 @@ export function startListening(onStart, onResult, onError) {
 
   recognition.onresult = (event) => {
     const transcript = event.results?.[0]?.[0]?.transcript || "";
+    activeRecognition = null;
     if (onResult) onResult(transcript);
   };
 
-  recognition.onerror = () => {
-    if (onError)
-      onError("Maaf, suara kurang terdengar jelas. Coba ketik di chat ya!");
+  recognition.onerror = (event) => {
+    activeRecognition = null;
+    if (event.error === "aborted") {
+      if (onError) onError("");
+      return;
+    }
+    let msg = "Maaf, suaramu kurang terdengar jelas. Coba bicara lagi ya!";
+    if (event.error === "not-allowed") {
+      msg =
+        "Izin mikrofon belum aktif. Klik ikon gembok/pengaturan di samping alamat web untuk mengizinkan mikrofon ya.";
+    }
+    if (onError) onError(msg);
   };
 
-  recognition.start();
+  recognition.onend = () => {
+    activeRecognition = null;
+  };
+
+  try {
+    recognition.start();
+  } catch {
+    if (onError) onError("Gagal menyalakan mikrofon. Coba klik sekali lagi ya.");
+  }
+}
+
+export function stopListening() {
+  if (activeRecognition) {
+    try {
+      activeRecognition.stop();
+      activeRecognition = null;
+    } catch {
+      // Abaikan
+    }
+  }
 }
 
 export function stopSpeaking() {
@@ -52,7 +92,6 @@ export function stopSpeaking() {
   }
 }
 
-// Memecah kalimat agar diputar instan tanpa jeda
 function splitTextIntoChunks(text) {
   const clean = (text || "")
     .replace(/[*#_~`]/g, "")
@@ -112,7 +151,6 @@ function buildTtsUrl(chunkText, serverIndex = 0) {
   );
 }
 
-// Pemutar Suara Instan (< 0.3 detik) dengan Pre-loading Kalimat Berikutnya
 export function speakText(text, onStart, onEnd) {
   stopSpeaking();
   isStopped = false;
@@ -135,10 +173,9 @@ export function speakText(text, onStart, onEnd) {
     audio.referrerPolicy = "no-referrer";
     audio.preload = "auto";
     audio.src = buildTtsUrl(chunks[index], serverTry);
-    audio.playbackRate = 1.06; // Kecepatan bicara natural & responsif
+    audio.playbackRate = 1.06;
     activeAudio = audio;
 
-    // Preload potongan kalimat berikutnya di belakang layar agar tidak ada jeda antar kalimat
     if (index + 1 < chunks.length) {
       const nextPreload = document.createElement("audio");
       nextPreload.referrerPolicy = "no-referrer";

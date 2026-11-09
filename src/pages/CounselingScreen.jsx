@@ -1,9 +1,22 @@
 import { useState, useEffect, useRef } from "react";
-import { Send, Sparkles, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Send,
+  Sparkles,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import JiwooInteractiveMascot from "../components/JiwooInteractiveMascot";
 import BottomNavbar from "../components/BottomNavbar";
 import { getJiwooResponse, resetJiwooMemory } from "../services/geminiService";
-import { speakText, stopSpeaking } from "../services/speechService";
+import {
+  startListening,
+  stopListening,
+  speakText,
+  stopSpeaking,
+} from "../services/speechService";
 import { getCurrentUser } from "../services/authService";
 
 export default function CounselingScreen({ setScreen }) {
@@ -23,6 +36,7 @@ export default function CounselingScreen({ setScreen }) {
   ]);
 
   const [inputText, setInputText] = useState("");
+  const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -47,11 +61,9 @@ export default function CounselingScreen({ setScreen }) {
       return;
     }
 
-    // Langsung aktifkan animasi menjelaskan detik itu juga!
     setIsSpeaking(true);
     const startTime = Date.now();
 
-    // Hitung durasi bicara natural berdasarkan jumlah kata (minimal 4 detik)
     const words = (text || "").trim().split(/\s+/).length;
     const minDurationMs = Math.min(Math.max(words * 360, 4000), 18000);
 
@@ -64,8 +76,6 @@ export default function CounselingScreen({ setScreen }) {
       () => setIsSpeaking(true),
       () => {
         const elapsed = Date.now() - startTime;
-        // Jika audio benar-benar selesai diputar (minimal sudah berjalan > 2.5 detik), hentikan animasi
-        // Namun jika gagal instan (< 2.5 detik karena autoplay block), biarkan animasi bicara tetap berjalan sesuai panjang teks!
         if (elapsed > 2500) {
           if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
           setIsSpeaking(false);
@@ -78,19 +88,28 @@ export default function CounselingScreen({ setScreen }) {
     return () => {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       stopSpeaking();
+      stopListening();
     };
   }, []);
 
   const isUserTyping = inputText.trim().length > 0 && !isLoading;
 
   const getJiwooInteractiveState = () => {
-    if (isUserTyping) {
+    if (isListening || isUserTyping) {
       return {
         mode: "listening",
-        statusText: "Menyimak Curhatanmu... 👂",
-        badgeText: "Aku menyimak tulisanmu... 🐾",
-        badgeColor: "bg-[#F4A950] text-[#4A3525]",
-        ringColor: "border-[#F4A950] bg-[#F4A950]/20",
+        statusText: isListening
+          ? "Mendengarkan Suaramu... 🎙️"
+          : "Menyimak Curhatanmu... 👂",
+        badgeText: isListening
+          ? "Aku sedang menyimak suaramu... 👂"
+          : "Aku menyimak tulisanmu... 🐾",
+        badgeColor: isListening
+          ? "bg-red-500 text-white"
+          : "bg-[#F4A950] text-[#4A3525]",
+        ringColor: isListening
+          ? "border-red-500 bg-red-400/25"
+          : "border-[#F4A950] bg-[#F4A950]/20",
       };
     }
 
@@ -129,9 +148,9 @@ export default function CounselingScreen({ setScreen }) {
 
   const uiState = getJiwooInteractiveState();
 
-  const handleTextSubmit = async (e) => {
-    e.preventDefault();
-    const trimmed = inputText.trim();
+  // Fungsi utama pengirim pesan (baik dari Ketikan Teks maupun Suara Mic)
+  const sendMessageToJiwoo = async (rawText) => {
+    const trimmed = (rawText || "").trim();
     if (!trimmed || isLoading) return;
 
     stopSpeaking();
@@ -176,10 +195,57 @@ export default function CounselingScreen({ setScreen }) {
     }
   };
 
+  const handleTextSubmit = async (e) => {
+    e.preventDefault();
+    await sendMessageToJiwoo(inputText);
+  };
+
+  // Fungsi Tombol Mikrofon (Mulai / Berhenti Berbicara Langsung ke Jiwoo)
+  const handleMicClick = () => {
+    if (isLoading) return;
+
+    if (isListening) {
+      stopListening();
+      setIsListening(false);
+      return;
+    }
+
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    stopSpeaking();
+    setIsSpeaking(false);
+
+    startListening(
+      () => setIsListening(true),
+      async (transcript) => {
+        setIsListening(false);
+        if (transcript && transcript.trim()) {
+          await sendMessageToJiwoo(transcript);
+        }
+      },
+      (errMessage) => {
+        setIsListening(false);
+        if (errMessage) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `jiwoo-mic-info-${Date.now()}`,
+              sender: "jiwoo",
+              text: errMessage,
+              distortion: null,
+              reframing: null,
+            },
+          ]);
+        }
+      },
+    );
+  };
+
   const handleResetSession = () => {
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     stopSpeaking();
+    stopListening();
     resetJiwooMemory();
+    setIsListening(false);
     setIsSpeaking(false);
     setMessages([
       {
@@ -209,11 +275,7 @@ export default function CounselingScreen({ setScreen }) {
   };
 
   return (
-    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-21.5 max-md:landscape:pb-18.5 md:py-7 px-3 sm:px-5 md:px-8 text-center">
-      {/* Kontainer Utama:
-          - HP Portrait: Flex Kolom
-          - HP Landscape (max-md:landscape): Flex Baris 2 Kolom
-          - Desktop / Laptop (md): Grid 12 Kolom Lebar Penuh (5 Kiri + 7 Kanan) */}
+    <div className="relative z-10 flex flex-col justify-center w-full max-w-6xl mx-auto h-[calc(100dvh-56px)] md:h-dvh overflow-hidden pt-1.5 pb-21.5 max-md:landscape:pb-1,5 md:py-7 px-3 sm:px-5 md:px-8 text-center">
       <div className="flex-1 min-h-0 w-full flex flex-col max-md:landscape:flex-row md:grid md:grid-cols-12 gap-1.5 max-md:landscape:gap-4 md:gap-7 items-stretch overflow-hidden">
         {/* PANEL KIRI: Panggung Maskot Interaktif Jiwoo */}
         <div className="shrink-0 max-md:landscape:w-[38%] md:col-span-5 flex flex-col items-center justify-center bg-transparent md:bg-[#F6E4CE]/80 md:border-2 md:border-[#4A3525]/25 md:rounded-3xl p-0.5 md:p-7 text-center md:h-full overflow-hidden">
@@ -257,8 +319,8 @@ export default function CounselingScreen({ setScreen }) {
           </div>
 
           <p className="hidden md:block mt-3 text-xs text-[#4A3525]/75 max-w-xs leading-relaxed">
-            Ketikkan curhatan atau pertanyaanmu di ruang chat sebelah kanan.
-            Jiwoo akan membalas dengan tulisan sekaligus berbicara langsung.
+            Klik ikon mikrofon untuk berbicara langsung atau ketikkan curhatanmu
+            di ruang chat sebelah kanan.
           </p>
 
           <div className="hidden md:flex flex-wrap items-center justify-center gap-2.5 mt-4">
@@ -386,11 +448,12 @@ export default function CounselingScreen({ setScreen }) {
             )}
           </div>
 
-          {/* Form Input Chat */}
+          {/* Form Input Suara (Mic) & Ketikan Chat */}
           <form
             onSubmit={handleTextSubmit}
-            className="w-full pt-2.5 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-2 shrink-0 bg-[#FDF3E7]/90 md:bg-transparent backdrop-blur-xs"
+            className="w-full pt-2.5 pb-1 md:pb-0 md:border-t-2 md:border-[#4A3525]/15 flex items-center gap-1.5 sm:gap-2 shrink-0 bg-[#FDF3E7]/90 md:bg-transparent backdrop-blur-xs"
           >
+            {/* Tombol Mute/Unmute khusus Mobile */}
             <button
               type="button"
               onClick={toggleMute}
@@ -400,12 +463,39 @@ export default function CounselingScreen({ setScreen }) {
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
 
+            {/* Tombol Mikrofon (Bicara Langsung ke Jiwoo di HP & Laptop) */}
+            <button
+              type="button"
+              onClick={handleMicClick}
+              disabled={isLoading}
+              title={
+                isListening
+                  ? "Klik untuk berhenti mendengarkan"
+                  : "Klik untuk bicara langsung ke Jiwoo"
+              }
+              aria-label="Bicara menggunakan mikrofon"
+              className={`p-2.5 sm:px-3.5 sm:py-2.5 rounded-full border-2 border-[#1E1B18] font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-[2px_2px_0px_#1E1B18] ${
+                isListening
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "bg-white hover:bg-[#F6E4CE] text-[#1E1B18] active:scale-95"
+              }`}
+            >
+              {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+              <span className="hidden sm:inline">
+                {isListening ? "Mendengarkan..." : "Bicara"}
+              </span>
+            </button>
+
             <input
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Ketik curhatanmu ke Jiwoo di sini..."
-              className="flex-1 min-w-0 bg-white border-2 border-[#1E1B18] rounded-full px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-[#1E1B18] placeholder-[#4A3525]/55 focus:outline-none shadow-[2px_2px_0px_#1E1B18]"
+              placeholder={
+                isListening
+                  ? "Silakan bicara, Jiwoo sedang mendengarkan..."
+                  : "Bicara lewat mic atau ketik di sini..."
+              }
+              className="flex-1 min-w-0 bg-white border-2 border-[#1E1B18] rounded-full px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-[#1E1B18] placeholder-[#4A3525]/55 focus:outline-none shadow-[2px_2px_0px_#1E1B18]"
             />
 
             <button
@@ -420,11 +510,11 @@ export default function CounselingScreen({ setScreen }) {
         </div>
       </div>
 
-      {/* Bottom Navbar Khusus Mobile */}
+      {/* Bottom Navbar Khusus Mobile: Klik tombol tengah juga bisa langsung mengaktifkan Mic */}
       <BottomNavbar
         activeScreen={5}
         setScreen={setScreen}
-        onCenterClick={handleReplayLastMessage}
+        onCenterClick={handleMicClick}
       />
     </div>
   );
