@@ -78,7 +78,7 @@ export default function CounselingScreen({ setScreen }) {
           if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
           setIsSpeaking(false);
         }
-      }
+      },
     );
   };
 
@@ -233,7 +233,7 @@ export default function CounselingScreen({ setScreen }) {
             },
           ]);
         }
-      }
+      },
     );
   };
 
@@ -304,7 +304,7 @@ export default function CounselingScreen({ setScreen }) {
             <JiwooInteractiveMascot
               mode={uiState.mode}
               onClick={handleReplayLastMessage}
-              className="relative z-10 w-32 h-28 sm:w-40 sm:h-36 max-md:landscape:w-28 max-md:landscape:h-24 md:w-56 md:h-52"
+              className="relative z-10 w-66 h-58 sm:w-40 sm:h-36 max-md:landscape:w-28 max-md:landscape:h-24 md:w-56 md:h-52"
             />
 
             {uiState.mode === "explaining" && (
@@ -437,7 +437,7 @@ export default function CounselingScreen({ setScreen }) {
                     {msg.text}
                   </div>
                 </div>
-              )
+              ),
             )}
 
             {isLoading && (
