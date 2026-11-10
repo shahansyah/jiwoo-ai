@@ -1,85 +1,33 @@
-const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+const LOCAL_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
 const BASE_V1BETA_URL = "https://generativelanguage.googleapis.com/v1beta/";
 
 let conversationHistory = [];
-let cachedValidModels = null;
 
 export function resetJiwooMemory() {
   conversationHistory = [];
 }
 
-// Mengambil daftar nama model yang benar-benar ada di server Google untuk API Key ini
-async function fetchValidModelsFromGoogle() {
-  if (cachedValidModels && cachedValidModels.length > 0) {
-    return cachedValidModels;
+function parseJiwooOutput(rawText) {
+  let cleanReply = rawText.replace(/[*#`]/g, "").trim();
+  let distortion = null;
+  let reframing = null;
+
+  const cbtMatch = cleanReply.match(/\[CBT:\s*([^|]+)\|\s*([^\]]+)\]/i);
+  if (cbtMatch) {
+    distortion = cbtMatch[1].trim();
+    reframing = cbtMatch[2].trim();
+    cleanReply = cleanReply.replace(cbtMatch[0], "").trim();
   }
 
-  try {
-    const res = await fetch(
-      `${BASE_V1BETA_URL}models?key=${encodeURIComponent(GEMINI_API_KEY)}`,
-      {
-        headers: { "x-goog-api-key": GEMINI_API_KEY },
-      },
-    );
-    const data = await res.json();
-
-    if (data?.models && Array.isArray(data.models)) {
-      // Ambil semua model teks yang mendukung generateContent
-      const allSupported = data.models
-        .filter(
-          (m) =>
-            m.supportedGenerationMethods?.includes("generateContent") &&
-            m.name.includes("gemini") &&
-            !m.name.includes("tts") &&
-            !m.name.includes("image") &&
-            !m.name.includes("embedding") &&
-            !m.name.includes("vision"),
-        )
-        .map((m) => m.name.replace("models/", ""));
-
-      // Urutkan agar model generasi 3 (gemini-3...) berada paling atas,
-      // dan singkirkan model yang sudah diblokir untuk user baru (1.5, 2.0, 2.5-flash biasa)
-      const gen3Models = allSupported.filter((name) =>
-        name.startsWith("gemini-3"),
-      );
-      const otherModels = allSupported.filter(
-        (name) =>
-          !name.startsWith("gemini-3") &&
-          !name.startsWith("gemini-1.5") &&
-          !name.startsWith("gemini-2.0") &&
-          name !== "gemini-2.5-flash",
-      );
-
-      const finalQueue = [...gen3Models, ...otherModels];
-
-      if (finalQueue.length > 0) {
-        cachedValidModels = finalQueue;
-        return finalQueue;
-      }
-
-      if (allSupported.length > 0) {
-        cachedValidModels = allSupported;
-        return allSupported;
-      }
-    }
-  } catch {
-    // Abaikan jika gagal fetch list
-  }
-
-  return ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-pro"];
+  return {
+    reply: cleanReply,
+    distortion,
+    reframing,
+    mood: "friendly",
+  };
 }
 
 export async function getJiwooResponse(userMessage) {
-  if (!GEMINI_API_KEY) {
-    return {
-      reply:
-        "VITE_GEMINI_API_KEY belum terbaca di browser. Pastikan di Vercel sudah diset sebagai Config dan sudah di-redeploy ya!",
-      distortion: null,
-      reframing: null,
-      mood: "friendly",
-    };
-  }
-
   const systemPrompt = `Kamu adalah Jiwoo, sahabat curhat sekaligus konselor sebaya (peer counselor) yang asik, hangat, ekspresif, dan suportif.
 
 ATURAN GAYA BICARA:
@@ -113,76 +61,89 @@ Jika sapaan atau obrolan biasa, jangan tulis tag [CBT: ...] sama sekali.`;
     ...recentHistory,
   ];
 
-  // Ambil daftar model asli dari akun Google AI Studio kamu
-  const modelsToTry = await fetchValidModelsFromGoogle();
-  const errorLogs = [];
+  // 1. PRIORITAS UTAMA: Panggil Serverless Backend (/api/chat) agar API Key tersembunyi dengan aman
+  try {
+    const serverRes = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: payloadContents }),
+    });
 
-  for (const modelName of modelsToTry) {
-    try {
-      const endpoint = `${BASE_V1BETA_URL}models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          contents: payloadContents,
-          generationConfig: {
-            temperature: 0.85,
-          },
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        const msg = data?.error?.message || `HTTP ${response.status}`;
-        errorLogs.push(`${modelName} -> ${msg}`);
-        continue;
+    if (serverRes.ok) {
+      const serverData = await serverRes.json();
+      if (serverData?.text) {
+        const result = parseJiwooOutput(serverData.text);
+        conversationHistory.push({
+          role: "model",
+          parts: [{ text: result.reply }],
+        });
+        return result;
       }
+    }
+  } catch {
+    // Jika dijalankan di npm run dev lokal (tanpa vercel dev), lanjut ke fallback lokal di bawah
+  }
 
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      if (!rawText) continue;
+  // 2. FALLBACK LOKAL (Hanya untuk npm run dev di laptop)
+  if (!LOCAL_API_KEY) {
+    conversationHistory.pop();
+    return {
+      reply:
+        "Koneksi ke server AI sedang disiapkan. Pastikan variabel GEMINI_API_KEY sudah terpasang di Vercel ya!",
+      distortion: null,
+      reframing: null,
+      mood: "friendly",
+    };
+  }
 
-      // Kunci model yang berhasil ini di urutan pertama untuk chat berikutnya agar instan
-      cachedValidModels = [
-        modelName,
-        ...modelsToTry.filter((m) => m !== modelName),
-      ];
+  try {
+    const listRes = await fetch(
+      `${BASE_V1BETA_URL}models?key=${encodeURIComponent(LOCAL_API_KEY)}`,
+      { headers: { "x-goog-api-key": LOCAL_API_KEY } },
+    );
+    const listData = await listRes.json();
+    const models = (listData?.models || [])
+      .filter(
+        (m) =>
+          m.supportedGenerationMethods?.includes("generateContent") &&
+          m.name.includes("gemini-3"),
+      )
+      .map((m) => m.name.replace("models/", ""));
 
-      let cleanReply = rawText.replace(/[*#`]/g, "").trim();
-      let distortion = null;
-      let reframing = null;
+    const targetModel = models[0] || "gemini-3-flash-preview";
+    const endpoint = `${BASE_V1BETA_URL}models/${targetModel}:generateContent?key=${encodeURIComponent(LOCAL_API_KEY)}`;
 
-      const cbtMatch = cleanReply.match(/\[CBT:\s*([^|]+)\|\s*([^\]]+)\]/i);
-      if (cbtMatch) {
-        distortion = cbtMatch[1].trim();
-        reframing = cbtMatch[2].trim();
-        cleanReply = cleanReply.replace(cbtMatch[0], "").trim();
-      }
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": LOCAL_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: payloadContents,
+        generationConfig: { temperature: 0.85 },
+      }),
+    });
 
+    const data = await res.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+    if (rawText) {
+      const result = parseJiwooOutput(rawText);
       conversationHistory.push({
         role: "model",
-        parts: [{ text: cleanReply }],
+        parts: [{ text: result.reply }],
       });
-
-      return {
-        reply: cleanReply,
-        distortion,
-        reframing,
-        mood: "friendly",
-      };
-    } catch (err) {
-      errorLogs.push(`${modelName} -> ${err?.message || "Network error"}`);
+      return result;
     }
+  } catch {
+    // Abaikan
   }
 
   conversationHistory.pop();
-
   return {
-    reply: `Daftar model yang dicoba: [${modelsToTry.slice(0, 4).join(", ")}]. Detail kendala: ${errorLogs[0] || "Tidak diketahui"}`,
+    reply:
+      "Maaf ya, koneksiku lagi agak terhambat sebentar. Coba kirim ulang pesanmu ya!",
     distortion: null,
     reframing: null,
     mood: "friendly",
