@@ -1,18 +1,7 @@
-const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY || "").trim();
-
-// ====== PENGATURAN SUARA (ubah di sini) ======
-// Pilihan suara perempuan: "Aoede" (breezy), "Callirrhoe" (easy-going),
-// "Achernar" (soft), "Vindemiatrix" (gentle), "Sulafat" (warm), "Leda" (youthful)
-const VOICE_NAME = "Aoede";
-const VOICE_STYLE =
-  "Say this in Indonesian, softly and slowly, in a relaxed, laid-back, comforting tone, like a close friend talking to you late at night. Smile a little while speaking. Natural pauses, never in an announcer or navigation-voice style:";
-// ==============================================
-
 let currentAudio = null;
 let activeRecognition = null;
-let currentSessionId = 0; // Mengunci agar suara tidak pernah berulang / tumpang tindih
+let currentSessionId = 0; // Mencegah suara tumpang tindih atau berulang
 let cachedVoices = [];
-let lastSpeak = { text: "", time: 0 }; // Guard anti panggilan ganda (StrictMode / double klik)
 
 if (typeof window !== "undefined" && "speechSynthesis" in window) {
   const loadVoices = () => {
@@ -22,6 +11,7 @@ if (typeof window !== "undefined" && "speechSynthesis" in window) {
   window.speechSynthesis.onvoiceschanged = loadVoices;
 }
 
+// Membuka izin AudioContext browser saat tombol Kirim / Mic / Putar diklik
 export function unlockSpeechAudio() {
   try {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -34,7 +24,7 @@ export function unlockSpeechAudio() {
       }
     }
   } catch {
-    // Abaikan
+    // Abaikan jika browser sudah mengizinkan audio
   }
 }
 
@@ -120,10 +110,10 @@ export function stopSpeaking() {
       currentAudio.onended = null;
       currentAudio.onerror = null;
       currentAudio.pause();
+      currentAudio = null;
     } catch {
       // Abaikan
     }
-    currentAudio = null;
   }
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
     try {
@@ -134,276 +124,230 @@ export function stopSpeaking() {
   }
 }
 
-function pcmBase64ToWavUrl(base64Pcm, sampleRate = 24000) {
-  const binaryString = window.atob(base64Pcm);
-  const pcmLen = binaryString.length;
-  const wavBuffer = new ArrayBuffer(44 + pcmLen);
-  const view = new DataView(wavBuffer);
-
-  const writeString = (offset, str) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + pcmLen, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, "data");
-  view.setUint32(40, pcmLen, true);
-
-  const uint8 = new Uint8Array(wavBuffer, 44);
-  for (let i = 0; i < pcmLen; i++) {
-    uint8[i] = binaryString.charCodeAt(i);
-  }
-
-  const blob = new Blob([wavBuffer], { type: "audio/wav" });
-  return URL.createObjectURL(blob);
-}
-
-// Bersihkan teks supaya enak diucapkan. Jangan ubah kata di sini:
-// gaya santai sudah diatur lewat prompt di geminiService.
-function makeConversationalIndonesian(text) {
+// Membersihkan simbol markdown, emoji, dan tag CBT agar tidak ikut terbaca
+function cleanTextForTts(text) {
   return (text || "")
     .replace(/\[CBT:[\s\S]*?\]/gi, "")
     .replace(/[*#_~`]/g, "")
-    .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
-    .replace(/\bsaya\b/gi, "aku")
-    .replace(/\s*\n+\s*/g, ". ")
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Lapis 1: Gemini TTS, suara "Leda"
-async function fetchGeminiLyraAudio(text, sessionId) {
-  if (!GEMINI_API_KEY) return null;
+// Memecah kalimat menjadi potongan <= 180 karakter agar diterima oleh TikTok TTS API
+function splitTextIntoChunks(text, maxLength = 180) {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const chunks = [];
+  let current = "";
 
-  const controller = new AbortController();
-  // 6,5 detik terlalu pendek untuk model TTS -> sering jatuh ke suara robot
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  for (const sentence of sentences) {
+    if ((current + " " + sentence).trim().length <= maxLength) {
+      current = (current + " " + sentence).trim();
+    } else {
+      if (current) chunks.push(current);
+      if (sentence.length <= maxLength) {
+        current = sentence;
+      } else {
+        const words = sentence.split(/\s+/);
+        let temp = "";
+        for (const w of words) {
+          if ((temp + " " + w).trim().length <= maxLength) {
+            temp = (temp + " " + w).trim();
+          } else {
+            if (temp) chunks.push(temp);
+            temp = w;
+          }
+        }
+        current = temp;
+      }
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
 
-  try {
-    const endpoint =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent";
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
+// Mengambil audio MP3 Base64 dari TikTok TTS Proxy (Voice: id_001 - Gadis Indonesia)
+async function fetchTikTokChunkAudio(chunkText, sessionId) {
+  // Daftar endpoint proxy TikTok TTS publik
+  const endpoints = [
+    {
+      url: "https://tiktok-tts.weilnet.workers.dev/api/generation",
+      parse: async (res) => {
+        const json = await res.json();
+        return json?.data ? `data:audio/mp3;base64,${json.data}` : null;
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `${VOICE_STYLE}\n\n${text}`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: VOICE_NAME },
-            },
-          },
-        },
-      }),
-    });
+    },
+    {
+      url: "https://gesserit.co/api/tiktok-tts",
+      parse: async (res) => {
+        const json = await res.json();
+        return json?.base64
+          ? `data:audio/mp3;base64,${json.base64}`
+          : json?.data
+            ? `data:audio/mp3;base64,${json.data}`
+            : null;
+      },
+    },
+  ];
 
-    clearTimeout(timeoutId);
+  for (const ep of endpoints) {
     if (sessionId !== currentSessionId) return null;
 
-    if (!response.ok) {
-      console.warn(
-        "[Gemini TTS] gagal:",
-        response.status,
-        await response.text(),
-      );
-      return null;
-    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
 
-    const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    const inlineData = parts.find((p) => p.inlineData?.data)?.inlineData;
-    if (inlineData?.data) {
-      return pcmBase64ToWavUrl(inlineData.data, 24000);
+    try {
+      const response = await fetch(ep.url, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: chunkText,
+          voice: "id_001", // Kode resmi suara wanita Indonesia TikTok
+        }),
+      });
+
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        const audioDataUrl = await ep.parse(response);
+        if (audioDataUrl) return audioDataUrl;
+      }
+    } catch {
+      clearTimeout(timeoutId);
     }
-  } catch (err) {
-    clearTimeout(timeoutId);
-    console.warn("[Gemini TTS] error/timeout:", err?.message || err);
   }
+
   return null;
 }
 
-function getBestFemaleVoice() {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-    return null;
+// Cadangan jika seluruh server TikTok sedang sibuk
+function playFallbackBrowserVoice(text, sessionId, onStart, onEnd) {
+  if (
+    sessionId !== currentSessionId ||
+    typeof window === "undefined" ||
+    !("speechSynthesis" in window)
+  ) {
+    if (onEnd) onEnd();
+    return;
   }
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+
   const voices =
     cachedVoices.length > 0
       ? cachedVoices
       : window.speechSynthesis.getVoices() || [];
-
   const indoVoices = voices.filter((v) =>
     v.lang.toLowerCase().replace("_", "-").includes("id"),
   );
-  if (indoVoices.length === 0) return null;
 
-  return (
-    indoVoices.find(
-      (v) =>
-        v.name.toLowerCase().includes("gadis") &&
-        v.name.toLowerCase().includes("natural"),
-    ) ||
-    indoVoices.find((v) => v.name.toLowerCase().includes("natural")) ||
+  const femaleVoice =
     indoVoices.find((v) => v.name.toLowerCase().includes("gadis")) ||
     indoVoices.find((v) => v.name.toLowerCase().includes("google")) ||
     indoVoices.find((v) => !v.name.toLowerCase().includes("andika")) ||
-    indoVoices[0]
-  );
-}
+    indoVoices[0];
 
-// Lapis 2 (fallback): satu utterance utuh
-function playSingleUtteranceVoice(text, sessionId, onStart, onEnd) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-    if (onEnd) onEnd();
-    return;
-  }
-  if (sessionId !== currentSessionId) return;
-
-  const synth = window.speechSynthesis;
-  const utterance = new SpeechSynthesisUtterance(text);
-  const bestVoice = getBestFemaleVoice();
-  if (bestVoice) utterance.voice = bestVoice;
+  if (femaleVoice) utterance.voice = femaleVoice;
   utterance.lang = "id-ID";
-
-  // Dibuat mendekati normal supaya tidak terdengar seperti robot/chipmunk
-  utterance.rate = 1.0;
-  utterance.pitch = 1.05;
-  utterance.volume = 1.0;
+  utterance.rate = 1.12;
+  utterance.pitch = 1.15;
 
   let finished = false;
-  const finishOnce = () => {
+  const done = () => {
     if (finished || sessionId !== currentSessionId) return;
     finished = true;
     if (onEnd) onEnd();
   };
 
   utterance.onstart = () => {
-    if (sessionId !== currentSessionId) {
-      synth.cancel();
-      return;
-    }
-    if (onStart) onStart();
+    if (sessionId === currentSessionId && onStart) onStart();
   };
-  utterance.onend = finishOnce;
-  utterance.onerror = finishOnce;
+  utterance.onend = done;
+  utterance.onerror = done;
 
-  const speak = () => {
-    if (sessionId !== currentSessionId) return;
-    synth.speak(utterance);
-  };
-
-  // Chrome bug: cancel() lalu langsung speak() bikin kalimat terulang/terpotong.
-  // Beri jeda kecil kalau synth masih sibuk.
-  if (synth.speaking || synth.pending) {
-    synth.cancel();
-    setTimeout(speak, 120);
-  } else {
-    speak();
-  }
+  window.speechSynthesis.speak(utterance);
 }
 
 export async function speakText(text, onStart, onEnd) {
-  const cleanText = makeConversationalIndonesian(text);
+  stopSpeaking();
+  const mySessionId = ++currentSessionId;
+
+  const cleanText = cleanTextForTts(text);
   if (!cleanText) {
     if (onEnd) onEnd();
     return;
   }
 
-  // Abaikan panggilan ganda untuk teks yang sama dalam waktu sangat dekat
-  const now = Date.now();
-  if (cleanText === lastSpeak.text && now - lastSpeak.time < 1500) {
-    return;
-  }
-  lastSpeak = { text: cleanText, time: now };
-
-  stopSpeaking();
-  const mySessionId = ++currentSessionId;
-
-  let wavUrl = await fetchGeminiLyraAudio(cleanText, mySessionId);
-  if (!wavUrl && mySessionId === currentSessionId) {
-    wavUrl = await fetchGeminiLyraAudio(cleanText, mySessionId); // coba sekali lagi
-  }
-
-  if (mySessionId !== currentSessionId) {
-    if (wavUrl) URL.revokeObjectURL(wavUrl);
+  const chunks = splitTextIntoChunks(cleanText, 180);
+  if (chunks.length === 0) {
+    if (onEnd) onEnd();
     return;
   }
 
-  if (!wavUrl) {
-    playSingleUtteranceVoice(cleanText, mySessionId, onStart, onEnd);
+  // Ambil potongan kalimat pertama terlebih dahulu untuk mengecek ketersediaan TikTok TTS
+  const firstAudioSrc = await fetchTikTokChunkAudio(chunks[0], mySessionId);
+  if (mySessionId !== currentSessionId) return;
+
+  // Jika server TikTok TTS gagal/down, langsung gunakan fallback sekali saja (anti-looping)
+  if (!firstAudioSrc) {
+    playFallbackBrowserVoice(cleanText, mySessionId, onStart, onEnd);
     return;
   }
 
-  const audio = new Audio(wavUrl);
-  currentAudio = audio;
+  let hasStarted = false;
 
-  let started = false; // sudah benar-benar bunyi?
-  let done = false;
-
-  const cleanup = () => URL.revokeObjectURL(wavUrl);
-
-  const finish = () => {
-    if (done) return;
-    done = true;
-    cleanup();
-    if (mySessionId === currentSessionId && onEnd) onEnd();
-  };
-
-  audio.onplaying = () => {
-    if (mySessionId !== currentSessionId) {
-      audio.pause();
+  const playChunkAt = async (index, preloadedSrc = null) => {
+    if (mySessionId !== currentSessionId || index >= chunks.length) {
+      if (mySessionId === currentSessionId && onEnd) onEnd();
       return;
     }
-    if (!started) {
-      started = true; // onStart hanya sekali
-      if (onStart) onStart();
-    }
-  };
 
-  audio.onended = finish;
+    const audioSrc =
+      preloadedSrc || (await fetchTikTokChunkAudio(chunks[index], mySessionId));
 
-  audio.onerror = () => {
-    if (done || mySessionId !== currentSessionId) return;
-    if (started) {
-      // Sudah sempat bunyi -> JANGAN fallback (itu penyebab suara mengulang dari awal)
-      finish();
+    if (mySessionId !== currentSessionId) return;
+
+    if (!audioSrc) {
+      if (mySessionId === currentSessionId && onEnd) onEnd();
       return;
     }
-    done = true;
-    cleanup();
-    playSingleUtteranceVoice(cleanText, mySessionId, onStart, onEnd);
+
+    const audio = new Audio(audioSrc);
+    audio.playbackRate = 1.02; // Kecepatan natural khas TikTok
+    currentAudio = audio;
+
+    audio.onplaying = () => {
+      if (mySessionId !== currentSessionId) {
+        audio.pause();
+        return;
+      }
+      if (!hasStarted) {
+        hasStarted = true;
+        if (onStart) onStart();
+      }
+    };
+
+    audio.onended = () => {
+      if (mySessionId === currentSessionId) {
+        playChunkAt(index + 1, null);
+      }
+    };
+
+    audio.onerror = () => {
+      if (mySessionId === currentSessionId && onEnd) onEnd();
+    };
+
+    try {
+      await audio.play();
+    } catch {
+      if (!hasStarted && mySessionId === currentSessionId) {
+        playFallbackBrowserVoice(cleanText, mySessionId, onStart, onEnd);
+      } else if (mySessionId === currentSessionId && onEnd) {
+        onEnd();
+      }
+    }
   };
 
-  try {
-    await audio.play();
-  } catch {
-    if (done || started || mySessionId !== currentSessionId) return;
-    done = true;
-    cleanup();
-    playSingleUtteranceVoice(cleanText, mySessionId, onStart, onEnd);
-  }
+  playChunkAt(0, firstAudioSrc);
 }
