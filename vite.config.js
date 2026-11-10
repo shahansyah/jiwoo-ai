@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 
-// Plugin lokal agar /api/tts langsung berfungsi saat npm run dev di localhost
 function edgeTtsLocalPlugin() {
   return {
     name: "edge-tts-local",
@@ -31,8 +31,7 @@ function edgeTtsLocalPlugin() {
           res.setHeader("Content-Type", "audio/mpeg");
           res.setHeader("Cache-Control", "no-store");
           audioStream.pipe(res);
-        } catch (err) {
-          console.error("Edge TTS Error:", err);
+        } catch {
           res.statusCode = 500;
           res.end("TTS Error");
         }
@@ -42,5 +41,5 @@ function edgeTtsLocalPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), edgeTtsLocalPlugin()],
+  plugins: [react(), tailwindcss(), edgeTtsLocalPlugin()],
 });
