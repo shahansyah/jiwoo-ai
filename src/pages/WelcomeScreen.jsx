@@ -205,7 +205,7 @@ export default function WelcomeScreen({ onNext, isLoggedIn }) {
               Sosok di Balik Pengembangan Jiwoo AI
             </h2>
           </div>
-
+          {/* batas profil */}
           <div className="bg-[#F6E4CE] border-2 border-[#4A3525] rounded-3xl p-5 sm:p-6 md:p-8 shadow-[0_5px_0_#4A3525] flex flex-col md:flex-row items-center gap-6 md:gap-8">
             <div className="flex flex-col items-center gap-2 shrink-0">
               <div className="w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-[#FDF3E7] border-2 border-[#4A3525] overflow-hidden shadow-md flex items-center justify-center">
@@ -262,6 +262,128 @@ export default function WelcomeScreen({ onNext, isLoggedIn }) {
                   className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-[#4A3525] text-[#FDF3E7] hover:bg-[#352519] px-3 py-1.5 rounded-xl transition-all"
                 >
                   💻 github.com/shahansyah
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* batasnnya */}
+          <div className="bg-[#F6E4CE] border-2 border-[#4A3525] rounded-3xl p-5 sm:p-6 md:p-8 shadow-[0_5px_0_#4A3525] flex flex-col md:flex-row items-center gap-6 md:gap-8">
+            <div className="flex flex-col items-center gap-2 shrink-0">
+              <div className="w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-[#FDF3E7] border-2 border-[#4A3525] overflow-hidden shadow-md flex items-center justify-center">
+                <img
+                  src="https://github.com/Ortega35.png"
+                  alt="Muhammad Ibnu Nafis"
+                  onError={(e) => {
+                    e.currentTarget.src = jiwooMascot;
+                  }}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#F4A950] border border-[#4A3525]">
+                Ortega
+              </span>
+            </div>
+
+            <div className="flex-1 text-center md:text-left space-y-3">
+              <div>
+                <h3 className="text-base sm:text-lg md:text-xl font-bold text-[#4A3525]">
+                  Muhammad Ibnu Nafis
+                </h3>
+                <p className="text-xs font-bold text-[#4A3525]/70 font-sans">
+                  Full-Stack Web & Mobile Developer • Informatics Engineering
+                </p>
+              </div>
+
+              <p className="text-xs md:text-sm text-[#4A3525]/85 font-sans leading-relaxed">
+                Aplikasi <strong>Jiwoo AI</strong> dirancang dan dikembangkan
+                secara penuh oleh <strong>Muhammad Ibnu Nafis</strong>. Lahir di{" "}
+                <strong>Tegal</strong>, saat ini beliau sedang menempuh
+                pendidikan sarjana pada program studi{" "}
+                <strong>
+                  Teknik Informatika di Universitas Darussalam Gontor (UNIDA
+                  Gontor)
+                </strong>
+                . Melalui proyek ini, ia menggabungkan teknologi kecerdasan
+                buatan modern dengan kepedulian terhadap kesehatan mental
+                generasi muda.
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1 font-sans">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-[#FDF3E7] px-3 py-1.5 rounded-xl border border-[#4A3525]/30">
+                  📍 Tegal
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-[#FDF3E7] px-3 py-1.5 rounded-xl border border-[#4A3525]/30">
+                  🎓 Teknik Informatika - UNIDA Gontor
+                </span>
+                <a
+                  href="https://github.com/Ortega35"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-[#4A3525] text-[#FDF3E7] hover:bg-[#352519] px-3 py-1.5 rounded-xl transition-all"
+                >
+                  💻 github.com/Ortega35
+                </a>
+              </div>
+            </div>
+          </div>
+
+            {/* batasnnya */}
+          <div className="bg-[#F6E4CE] border-2 border-[#4A3525] rounded-3xl p-5 sm:p-6 md:p-8 shadow-[0_5px_0_#4A3525] flex flex-col md:flex-row items-center gap-6 md:gap-8">
+            <div className="flex flex-col items-center gap-2 shrink-0">
+              <div className="w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-[#FDF3E7] border-2 border-[#4A3525] overflow-hidden shadow-md flex items-center justify-center">
+                <img
+                  src="https://github.com/ramahdidayah.png"
+                  alt="Muhammad Ibnu Nafis"
+                  onError={(e) => {
+                    e.currentTarget.src = jiwooMascot;
+                  }}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#F4A950] border border-[#4A3525]">
+                Ramah Hidayah
+              </span>
+            </div>
+
+            <div className="flex-1 text-center md:text-left space-y-3">
+              <div>
+                <h3 className="text-base sm:text-lg md:text-xl font-bold text-[#4A3525]">
+                  Ramah Hidayah
+                </h3>
+                <p className="text-xs font-bold text-[#4A3525]/70 font-sans">
+                  Frontend Developer • Informatics Engineering
+                </p>
+              </div>
+
+              <p className="text-xs md:text-sm text-[#4A3525]/85 font-sans leading-relaxed">
+                Aplikasi <strong>Jiwoo AI</strong> dirancang dan dikembangkan
+                secara penuh oleh <strong>Ramah Hidayah</strong>. Lahir di{" "}
+                <strong>Jambi</strong>, saat ini beliau sedang menempuh
+                pendidikan sarjana pada program studi{" "}
+                <strong>
+                  Teknik Informatika di Universitas Darussalam Gontor (UNIDA
+                  Gontor)
+                </strong>
+                . Melalui proyek ini, ia menggabungkan teknologi kecerdasan
+                buatan modern dengan kepedulian terhadap kesehatan mental
+                generasi muda.
+              </p>
+
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1 font-sans">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-[#FDF3E7] px-3 py-1.5 rounded-xl border border-[#4A3525]/30">
+                  📍 Jambi
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-[#FDF3E7] px-3 py-1.5 rounded-xl border border-[#4A3525]/30">
+                  🎓 Teknik Informatika - UNIDA Gontor
+                </span>
+                <a
+                  href="https://github.com/Ortega35"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-[#4A3525] text-[#FDF3E7] hover:bg-[#352519] px-3 py-1.5 rounded-xl transition-all"
+                >
+                  💻 github.com/Ortega35
                 </a>
               </div>
             </div>
