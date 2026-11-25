@@ -328,7 +328,7 @@ export default function WelcomeScreen({ onNext, isLoggedIn }) {
             </div>
           </div>
 
-            {/* batasnnya */}
+          {/* batasnnya */}
           <div className="bg-[#F6E4CE] border-2 border-[#4A3525] rounded-3xl p-5 sm:p-6 md:p-8 shadow-[0_5px_0_#4A3525] flex flex-col md:flex-row items-center gap-6 md:gap-8">
             <div className="flex flex-col items-center gap-2 shrink-0">
               <div className="w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-[#FDF3E7] border-2 border-[#4A3525] overflow-hidden shadow-md flex items-center justify-center">
@@ -378,12 +378,12 @@ export default function WelcomeScreen({ onNext, isLoggedIn }) {
                   🎓 Teknik Informatika - UNIDA Gontor
                 </span>
                 <a
-                  href="https://github.com/Ortega35"
+                  href="https://github.com/ramahdidayah"
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-[#4A3525] text-[#FDF3E7] hover:bg-[#352519] px-3 py-1.5 rounded-xl transition-all"
                 >
-                  💻 github.com/Ortega35
+                  💻 github.com/ramahdidayah
                 </a>
               </div>
             </div>
